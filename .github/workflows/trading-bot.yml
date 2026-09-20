@@ -24,15 +24,20 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Ask Supabase trading service for analysis
+      - name: Ask Supabase trading service for crypto analysis
         run: |
-          curl --fail-with-body -sS \
-            -X POST \
-            -H "Content-Type: application/json" \
-            -H "x-bot-token: $SUPABASE_BOT_TOKEN" \
-            --data '{"symbol":"BTCUSDT"}' \
-            "$SUPABASE_FUNCTION_URL"
+          curl --fail-with-body -sS             -X POST             -H "Content-Type: application/json"             -H "x-bot-token: $SUPABASE_BOT_TOKEN"             --data '{"symbol":"BTCUSDT"}'             "$SUPABASE_FUNCTION_URL"
         env:
           SUPABASE_BOT_TOKEN: ${{ secrets.SUPABASE_BOT_TOKEN }}
           SUPABASE_FUNCTION_URL: https://vihbsfrwnslnmheowkhy.supabase.co/functions/v1/trading-bot
 
+      - name: Run forex AI analysis (paper only)
+        run: python bot.py
+        env:
+          MARKET: forex
+          FOREX_PAIRS: EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF,NZDUSD
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          MIN_AI_CONFIDENCE: "75"
+          MIN_SIGNAL_SCORE: "75"
+          QUOTE_AMOUNT: "5"
+          MAX_POSITION_USDT: "5"
