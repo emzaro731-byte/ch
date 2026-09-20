@@ -20,6 +20,7 @@ import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.decodeSingle
 import io.github.jan.supabase.realtime.Realtime
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -111,22 +112,24 @@ private fun Dashboard(onLogout: () -> Unit) {
     LaunchedEffect(userId) {
         if (userId == null) return@LaunchedEffect
         try {
-            supabase.from("trading_bot_settings").selectSingleValueAsFlow(TradingSettings::user_id) {
-                TradingSettings::user_id eq userId
-            }.collect { row ->
-                symbol = row.symbol; limit = row.position_limit_usdt.toString()
-                stopLoss = row.stop_loss_pct.toString(); takeProfit = row.take_profit_pct.toString()
-                paperMode = row.paper_mode; message = "Settings synced"
-            }
+            val row = supabase.from("trading_bot_settings")
+                .select { filter { eq("user_id", userId) } }
+                .decodeSingle<TradingSettings>()
+            symbol = row.symbol
+            limit = row.position_limit_usdt.toString()
+            stopLoss = row.stop_loss_pct.toString()
+            takeProfit = row.take_profit_pct.toString()
+            paperMode = row.paper_mode
+            message = "Settings synced"
         } catch (_: Exception) { message = "Settings sync waiting" }
     }
 
     LaunchedEffect(userId) {
         if (userId == null) return@LaunchedEffect
         try {
-            supabase.from("trading_bot_status").selectSingleValueAsFlow(TradingStatus::user_id) {
-                TradingStatus::user_id eq userId
-            }.collect { status = it }
+            status = supabase.from("trading_bot_status")
+                .select { filter { eq("user_id", userId) } }
+                .decodeSingle<TradingStatus>()
         } catch (_: Exception) { message = "Status sync waiting" }
     }
 
