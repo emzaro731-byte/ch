@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#070a12">
-  <title>Veylola Trading Bot</title>
+  <title>Veylola Trade</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -12,17 +12,39 @@
   <header class="topbar">
     <a class="brand" href="#"><span class="logo">V</span><span>Veylola<span class="muted"> Trade</span></span></a>
     <div class="top-actions">
-      <span class="status"><i></i> Paper mode</span>
+      <span class="status" id="connectionStatus"><i></i> Connecting…</span>
       <button class="icon-btn" id="themeBtn" aria-label="Toggle theme">☼</button>
     </div>
   </header>
 
   <main class="shell">
+    <section class="auth card" id="authCard">
+      <div>
+        <span class="eyebrow">ONE ACCOUNT · APP + WEB</span>
+        <h2>Connect your Veylola account</h2>
+        <p>Sign in with the same Supabase account used by the Android app. Settings and bot status will sync between both.</p>
+      </div>
+      <div class="auth-form">
+        <input id="email" type="email" autocomplete="email" placeholder="Email">
+        <input id="password" type="password" autocomplete="current-password" placeholder="Password">
+        <div class="auth-buttons">
+          <button class="primary" id="signInBtn">Sign in</button>
+          <button class="secondary" id="signUpBtn">Create account</button>
+        </div>
+        <small id="authMessage"></small>
+      </div>
+    </section>
+
+    <section class="userbar card hidden" id="userBar">
+      <div><span class="eyebrow">CONNECTED ACCOUNT</span><strong id="userEmail">—</strong></div>
+      <button class="secondary" id="signOutBtn">Sign out</button>
+    </section>
+
     <section class="hero">
       <div>
         <p class="eyebrow">AI CRYPTO TRADING</p>
         <h1>Trade with a clearer view of the market.</h1>
-        <p class="hero-copy">Monitor market data, review Groq analysis, and keep execution behind secure server-side controls.</p>
+        <p class="hero-copy">The Veylola Android app and this website use the same Supabase account and synchronized trading settings.</p>
         <div class="hero-actions">
           <button class="primary" id="analyzeBtn">Run market analysis</button>
           <button class="secondary" id="paperBtn">Paper trading: ON</button>
@@ -30,54 +52,53 @@
       </div>
       <div class="hero-card">
         <span>Selected pair</span>
-        <strong>BTC/USDT</strong>
+        <strong id="heroPair">BTC/USDT</strong>
         <small id="heroPrice">$104,218.00</small>
         <div class="spark" id="spark"></div>
       </div>
     </section>
 
     <section class="grid metrics">
-      <article class="card metric"><span>BTC/USDT</span><strong id="price">$104,218.00</strong><em id="change">+1.82%</em></article>
+      <article class="card metric"><span id="metricPair">BTC/USDT</span><strong id="price">$104,218.00</strong><em id="change">+1.82%</em></article>
       <article class="card metric"><span>24h high</span><strong id="high">$105,760.00</strong><small>Market data</small></article>
       <article class="card metric"><span>24h low</span><strong id="low">$101,840.00</strong><small>Market data</small></article>
-      <article class="card metric"><span>Bot state</span><strong id="botState">PAPER</strong><small>Real orders disabled</small></article>
+      <article class="card metric"><span>Bot state</span><strong id="botState">PAPER</strong><small id="botStateDetail">Waiting for sync</small></article>
     </section>
 
     <section class="grid main-grid">
       <article class="card chart-card">
-        <div class="card-head"><div><span class="eyebrow">MARKET</span><h2>BTC/USDT</h2></div><select id="pair"><option>BTC/USDT</option><option>ETH/USDT</option><option>SOL/USDT</option></select></div>
+        <div class="card-head"><div><span class="eyebrow">MARKET</span><h2 id="chartPair">BTC/USDT</h2></div><select id="pair"><option value="BTCUSDT">BTC/USDT</option><option value="ETHUSDT">ETH/USDT</option><option value="SOLUSDT">SOL/USDT</option></select></div>
         <div class="chart-wrap"><canvas id="chart"></canvas></div>
-        <div class="chart-foot"><span>5m candles</span><span id="updated">Updated just now</span></div>
+        <div class="chart-foot"><span>5m candles</span><span id="updated">Waiting for market data</span></div>
       </article>
 
       <article class="card decision-card">
         <div class="card-head"><div><span class="eyebrow">AI ANALYSIS</span><h2>Current decision</h2></div><span class="decision hold" id="decision">HOLD</span></div>
-        <div class="confidence"><div class="confidence-row"><span>Confidence</span><strong id="confidence">74%</strong></div><div class="bar"><i id="confidenceBar"></i></div></div>
-        <p id="reason">Market snapshot is being evaluated. The bot prefers HOLD when evidence is weak.</p>
-        <div class="rules"><div><span>✓</span> Risk checks enabled</div><div><span>✓</span> Withdrawals disabled</div><div><span>✓</span> Paper execution</div></div>
+        <div class="confidence"><div class="confidence-row"><span>Confidence</span><strong id="confidence">0%</strong></div><div class="bar"><i id="confidenceBar"></i></div></div>
+        <p id="reason">Sign in to sync the bot's latest analysis.</p>
+        <div class="rules"><div><span>✓</span> Risk checks enabled</div><div><span>✓</span> Secrets stay server-side</div><div><span>✓</span> Paper execution by default</div></div>
       </article>
     </section>
 
     <section class="grid lower-grid">
       <article class="card">
-        <div class="card-head"><div><span class="eyebrow">CONFIG</span><h2>Bot controls</h2></div></div>
-        <label>Trading pair<select><option>BTCUSDT</option><option>ETHUSDT</option><option>SOLUSDT</option></select></label>
-        <label>Position limit<input value="$5.00" disabled></label>
-        <label>Stop loss<input value="2%" disabled></label>
-        <label>Take profit<input value="3%" disabled></label>
-        <p class="notice">Execution credentials stay on the backend. Never place Groq or Binance secrets in this website.</p>
+        <div class="card-head"><div><span class="eyebrow">SYNCED CONFIG</span><h2>Bot controls</h2></div></div>
+        <label>Trading pair<select id="settingsPair"><option value="BTCUSDT">BTCUSDT</option><option value="ETHUSDT">ETHUSDT</option><option value="SOLUSDT">SOLUSDT</option></select></label>
+        <label>Position limit (USDT)<input id="positionLimit" type="number" min="0.1" step="0.1" value="5"></label>
+        <label>Stop loss (%)<input id="stopLoss" type="number" min="0.1" step="0.1" value="2"></label>
+        <label>Take profit (%)<input id="takeProfit" type="number" min="0.1" step="0.1" value="3"></label>
+        <label class="toggle-row"><span>Paper mode</span><input id="paperMode" type="checkbox" checked></label>
+        <button class="primary full" id="saveSettings">Save & sync with app</button>
+        <p class="notice">These settings are stored per account. Binance and Groq credentials are never stored in this website.</p>
       </article>
       <article class="card">
         <div class="card-head"><div><span class="eyebrow">ACTIVITY</span><h2>Recent events</h2></div></div>
-        <div class="events" id="events">
-          <div><b>HOLD</b><span>Waiting for stronger evidence</span><time>Now</time></div>
-          <div><b>MARKET</b><span>BTC snapshot loaded</span><time>1m</time></div>
-          <div><b>SAFETY</b><span>Paper mode remains active</span><time>5m</time></div>
-        </div>
+        <div class="events" id="events"><div><b>SYNC</b><span>Waiting for account connection</span><time>Now</time></div></div>
       </article>
     </section>
   </main>
-  <footer>Veylola Trade · AI-assisted analysis · Paper trading by default</footer>
+  <footer>Veylola Trade · Android + Web · Supabase sync · Paper trading by default</footer>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="app.js"></script>
 </body>
 </html>
