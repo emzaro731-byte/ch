@@ -16,11 +16,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.Auth
+import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.from
-import io.github.jan.supabase.postgrest.decodeSingle
+import io.github.jan.supabase.postgrest.result.decodeSingle
 import io.github.jan.supabase.realtime.Realtime
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -100,7 +101,7 @@ private fun LoginScreen(onLoggedIn: () -> Unit) {
 
 @Composable
 private fun Dashboard(onLogout: () -> Unit) {
-    val userId = supabase.auth.currentUserOrNull()?.id
+    val userId: String? = supabase.auth.currentUserOrNull()?.id
     var symbol by remember { mutableStateOf("BTCUSDT") }
     var limit by remember { mutableStateOf("5") }
     var stopLoss by remember { mutableStateOf("2") }
