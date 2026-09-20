@@ -17,10 +17,6 @@ FOREX_PAIRS = [x.strip().upper() for x in os.getenv(
 QUOTE_AMOUNT = float(os.getenv("QUOTE_AMOUNT", "5"))
 MAX_POSITION_USDT = float(os.getenv("MAX_POSITION_USDT", "5"))
 EXECUTION_MODE = os.getenv("EXECUTION_MODE", "paper").lower()
-OANDA_API_TOKEN = os.getenv("OANDA_API_TOKEN", "").strip()
-OANDA_ACCOUNT_ID = os.getenv("OANDA_ACCOUNT_ID", "").strip()
-OANDA_BASE_URL = os.getenv("OANDA_BASE_URL", "https://api-fxpractice.oanda.com").rstrip("/")
-OANDA_UNITS = int(os.getenv("OANDA_UNITS", "1"))
 BUSHA_API_KEY = os.getenv("BUSHA_API_KEY", "").strip()
 BUSHA_PROFILE_ID = os.getenv("BUSHA_PROFILE_ID", "").strip()
 BUSHA_BASE_URL = os.getenv("BUSHA_BASE_URL", "https://api.sandbox.busha.so").rstrip("/")
@@ -412,54 +408,6 @@ def busha_crypto_conversion(action, source_currency, target_currency, source_amo
     )
 
 
-def oanda_instrument(pair):
-    if len(pair) != 6:
-        raise ValueError(f"Invalid forex pair: {pair}")
-    return f"{pair[:3]}_{pair[3:]}"
-
-
-def oanda_practice_order(pair, action, units, stop_loss, take_profit):
-    if not OANDA_API_TOKEN or not OANDA_ACCOUNT_ID:
-        return "blocked: OANDA practice credentials are not configured"
-    if MARKET != "forex":
-        return "blocked: OANDA execution is only enabled for forex mode"
-    if units < 1:
-        return "blocked: OANDA_UNITS must be at least 1"
-
-    instrument = oanda_instrument(pair)
-    signed_units = str(units if action == "BUY" else -units)
-    payload = {
-        "order": {
-            "type": "MARKET",
-            "instrument": instrument,
-            "units": signed_units,
-            "timeInForce": "FOK",
-            "positionFill": "DEFAULT",
-            "stopLossOnFill": {"price": f"{stop_loss:.5f}", "timeInForce": "GTC"},
-            "takeProfitOnFill": {"price": f"{take_profit:.5f}"},
-            "clientExtensions": {
-                "tag": "veylolatrade-ai",
-                "comment": "75pct AI confirmation; practice execution",
-            },
-        }
-    }
-    response = requests.post(
-        f"{OANDA_BASE_URL}/v3/accounts/{OANDA_ACCOUNT_ID}/orders",
-        headers={
-            "Authorization": f"Bearer {OANDA_API_TOKEN}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        json=payload,
-        timeout=15,
-    )
-    if not response.ok:
-        return f"OANDA practice order failed: HTTP {response.status_code} {response.text[:500]}"
-    data = response.json()
-    tx = data.get("orderFillTransaction") or data.get("orderCreateTransaction") or {}
-    return f"OANDA PRACTICE {action} {instrument} {units} units; transaction={tx.get('id', 'unknown')}"
-
-
 def execute(action, price, item=None):
     if QUOTE_AMOUNT <= 0 or QUOTE_AMOUNT > MAX_POSITION_USDT:
         return "blocked: position limit"
@@ -481,13 +429,18 @@ def execute(action, price, item=None):
             )
 
     if EXECUTION_MODE == "practice" and MARKET == "forex" and item:
-        return oanda_practice_order(
-            item["market"]["symbol"],
-            action,
-            OANDA_UNITS,
-            item["market"]["stop_loss"],
-            item["market"]["take_profit"],
-        )
+        pair = item["market"]["symbol"]
+        if len(pair) != 6:
+            return "blocked: invalid forex pair"
+        base_currency, quote_currency = pair[:3], pair[3:]
+        if action == "BUY":
+            return busha_crypto_conversion(
+                "FOREX_BUY", quote_currency, base_currency, QUOTE_AMOUNT
+            )
+        if action == "SELL":
+            return busha_crypto_conversion(
+                "FOREX_SELL", base_currency, quote_currency, QUOTE_AMOUNT / price
+            )
 
     return f"PAPER {action} @ {price:.5f} (no real order sent)"
 
