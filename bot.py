@@ -33,7 +33,8 @@ GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
 # Safety-first: this build never sends live orders.
 LIVE_TRADING = False
-groq = Groq(api_key=os.environ["GROQ_API_KEY"])
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
+groq = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 
 def forex_yahoo_symbol(pair):
@@ -323,6 +324,13 @@ def market_summary(symbol):
 
 
 def groq_decision(summary):
+    if not groq:
+        return {
+            "confirm": "HOLD",
+            "confidence": 0,
+            "reason": "GROQ_API_KEY is not configured in GitHub Actions.",
+            "risk_flags": ["missing_groq_api_key"],
+        }
     prompt = f"""You are the second-stage confirmation engine for a conservative
 market-analysis system. Numeric market data and risk rules are authoritative.
 
@@ -499,9 +507,22 @@ def main():
     print(json.dumps(output, indent=2))
     for item in results:
         if item.get("final_action") == "BUY":
-            print(execute("BUY", item["market"]["price"], item))
+            market_data = item.get("market")
+            if isinstance(market_data, dict):
+                price = market_data.get("price")
+                if isinstance(price, (int, float)):
+                    print(execute("BUY", price, item))
+                else:
+                    print("HOLD: missing market price")
+            else:
+                print("HOLD: invalid market data")
         else:
-            print(f'HOLD: {item.get("market", {}).get("symbol", item.get("symbol", "unknown"))}')
+            market_data = item.get("market")
+            if isinstance(market_data, dict):
+                display_symbol = market_data.get("symbol", item.get("symbol", "unknown"))
+            else:
+                display_symbol = item.get("symbol", "unknown")
+            print(f"HOLD: {display_symbol}")
 
 
 if __name__ == "__main__":
