@@ -18,11 +18,22 @@ jobs:
           python-version: "3.11"
 
       - run: pip install -r requirements.txt
-      - run: python bot.py
+      - name: Ask Supabase trading service for analysis
+        run: |
+          curl --fail-with-body -sS \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -H "x-bot-token: $SUPABASE_BOT_TOKEN" \
+            --data '{"symbol":"BTCUSDT"}' \
+            "$SUPABASE_FUNCTION_URL"
+        env:
+          SUPABASE_BOT_TOKEN: ${{ secrets.SUPABASE_BOT_TOKEN }}
+          SUPABASE_FUNCTION_URL: https://vihbsfrwnslnmheowkhy.supabase.co/functions/v1/trading-bot
+
+      - name: Run local paper-trading checks
+        run: python bot.py
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
-          BINANCE_API_SECRET: ${{ secrets.BINANCE_API_SECRET }}
           SYMBOL: BTCUSDT
           QUOTE_AMOUNT: "5"
           MAX_POSITION_USDT: "5"
