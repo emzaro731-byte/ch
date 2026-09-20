@@ -35,6 +35,23 @@
       </div>
     </section>
 
+
+    <section class="card wallet-card hidden" id="walletCard">
+      <div class="card-head">
+        <div><span class="eyebrow">WALLET</span><h2>Balance & bank access</h2></div>
+        <span class="wallet-provider" id="walletProvider">Busha · Setup required</span>
+      </div>
+      <div class="wallet-balance">
+        <div><span>Available NGN</span><strong id="walletBalance">₦0.00</strong></div>
+        <div><span>Trading balance</span><strong id="walletLocked">₦0.00</strong></div>
+      </div>
+      <div class="wallet-actions">
+        <button class="primary" id="depositBtn">Deposit from Nigerian bank</button>
+        <button class="secondary" id="withdrawBtn">Withdraw to Nigerian bank</button>
+      </div>
+      <p class="notice" id="walletNotice">Your real NGN balance will come from the connected regulated provider. Never enter bank or provider secrets into the website.</p>
+    </section>
+
     <section class="userbar card hidden" id="userBar">
       <div><span class="eyebrow">CONNECTED ACCOUNT</span><strong id="userEmail">—</strong></div>
       <button class="secondary" id="signOutBtn">Sign out</button>
