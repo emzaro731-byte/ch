@@ -21,6 +21,10 @@ OANDA_API_TOKEN = os.getenv("OANDA_API_TOKEN", "").strip()
 OANDA_ACCOUNT_ID = os.getenv("OANDA_ACCOUNT_ID", "").strip()
 OANDA_BASE_URL = os.getenv("OANDA_BASE_URL", "https://api-fxpractice.oanda.com").rstrip("/")
 OANDA_UNITS = int(os.getenv("OANDA_UNITS", "1"))
+BUSHA_API_KEY = os.getenv("BUSHA_API_KEY", "").strip()
+BUSHA_PROFILE_ID = os.getenv("BUSHA_PROFILE_ID", "").strip()
+BUSHA_BASE_URL = os.getenv("BUSHA_BASE_URL", "https://api.sandbox.busha.so").rstrip("/")
+BUSHA_QUOTE_CURRENCY = os.getenv("BUSHA_QUOTE_CURRENCY", "USDT").upper()
 RISK_PER_TRADE_PCT = float(os.getenv("RISK_PER_TRADE_PCT", "0.5"))
 MAX_DAILY_LOSS_PCT = float(os.getenv("MAX_DAILY_LOSS_PCT", "2"))
 MAX_TRADES_PER_DAY = int(os.getenv("MAX_TRADES_PER_DAY", "3"))
@@ -358,6 +362,56 @@ Market data:
         return {"confirm": "HOLD", "confidence": 0, "reason": "Invalid AI JSON", "risk_flags": ["ai_parse_error"]}
 
 
+def busha_crypto_conversion(action, source_currency, target_currency, source_amount):
+    if not BUSHA_API_KEY:
+        return "blocked: Busha sandbox API key is not configured"
+    if not BUSHA_PROFILE_ID:
+        return "blocked: Busha profile ID is not configured"
+    if EXECUTION_MODE != "practice":
+        return "paper: Busha execution is disabled outside practice mode"
+
+    headers = {
+        "Authorization": f"Bearer {BUSHA_API_KEY}",
+        "Content-Type": "application/json",
+        "X-BU-PROFILE-ID": BUSHA_PROFILE_ID,
+    }
+    quote_payload = {
+        "source_currency": source_currency,
+        "target_currency": target_currency,
+        "source_amount": f"{source_amount:.8f}".rstrip("0").rstrip("."),
+    }
+    quote_response = requests.post(
+        f"{BUSHA_BASE_URL}/v1/quotes",
+        headers=headers,
+        json=quote_payload,
+        timeout=15,
+    )
+    if not quote_response.ok:
+        return f"Busha quote failed: HTTP {quote_response.status_code} {quote_response.text[:500]}"
+
+    quote_data = quote_response.json().get("data", {})
+    quote_id = quote_data.get("id")
+    if not quote_id:
+        return "Busha quote failed: missing quote id"
+
+    transfer_response = requests.post(
+        f"{BUSHA_BASE_URL}/v1/transfers",
+        headers=headers,
+        json={"quote_id": quote_id},
+        timeout=15,
+    )
+    if not transfer_response.ok:
+        return f"Busha transfer failed: HTTP {transfer_response.status_code} {transfer_response.text[:500]}"
+
+    transfer_data = transfer_response.json().get("data", transfer_response.json())
+    transfer_id = transfer_data.get("id", "unknown")
+    status = transfer_data.get("status", "unknown")
+    return (
+        f"BUSHA SANDBOX {action} {source_currency}->{target_currency} "
+        f"amount={source_amount:.8f}; quote={quote_id}; transfer={transfer_id}; status={status}"
+    )
+
+
 def oanda_instrument(pair):
     if len(pair) != 6:
         raise ValueError(f"Invalid forex pair: {pair}")
@@ -409,6 +463,23 @@ def oanda_practice_order(pair, action, units, stop_loss, take_profit):
 def execute(action, price, item=None):
     if QUOTE_AMOUNT <= 0 or QUOTE_AMOUNT > MAX_POSITION_USDT:
         return "blocked: position limit"
+
+    if EXECUTION_MODE == "practice" and MARKET == "crypto" and item:
+        if action == "BUY":
+            return busha_crypto_conversion(
+                "BUY",
+                BUSHA_QUOTE_CURRENCY,
+                "BTC",
+                QUOTE_AMOUNT,
+            )
+        if action == "SELL":
+            return busha_crypto_conversion(
+                "SELL",
+                "BTC",
+                BUSHA_QUOTE_CURRENCY,
+                QUOTE_AMOUNT / price,
+            )
+
     if EXECUTION_MODE == "practice" and MARKET == "forex" and item:
         return oanda_practice_order(
             item["market"]["symbol"],
@@ -417,6 +488,7 @@ def execute(action, price, item=None):
             item["market"]["stop_loss"],
             item["market"]["take_profit"],
         )
+
     return f"PAPER {action} @ {price:.5f} (no real order sent)"
 
 
@@ -467,7 +539,7 @@ def main():
             "fee_pct": FEE_PCT,
             "slippage_pct": SLIPPAGE_PCT,
             "leverage": 0,
-            "execution": "paper_only",
+            "execution": EXECUTION_MODE if EXECUTION_MODE in ("paper", "practice") else "paper",
             "ai_min_confidence": MIN_AI_CONFIDENCE,
         },
     }
