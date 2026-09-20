@@ -12,13 +12,14 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
+
+        buildConfigField("String", "SUPABASE_URL", "\"https://vihbsfrwnslnmheowkhy.supabase.co\"")
+        buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"sb_publishable_HIMGxb-O6fj9O7OzT4ukuQ_jm5W8mWz\"")
     }
     buildFeatures {
         compose = true
         buildConfig = true
     }
-    buildConfigField("String", "SUPABASE_URL", "\"https://vihbsfrwnslnmheowkhy.supabase.co\"")
-    buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"sb_publishable_HIMGxb-O6fj9O7OzT4ukuQ_jm5W8mWz\"")
 }
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
