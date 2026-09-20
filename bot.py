@@ -27,24 +27,24 @@ LIVE_TRADING = (
 groq = Groq(api_key=os.environ["GROQ_API_KEY"])
 
 
-def candles():
+def fetch_candles(product="BTC-USD", granularity=300, count=200):
     end = int(time.time())
-    start = end - 200 * 300
+    start = end - count * granularity
     r = requests.get(
-        "https://api.exchange.coinbase.com/products/BTC-USD/candles",
+        f"https://api.exchange.coinbase.com/products/{product}/candles",
         params={
-            "granularity": 300,
+            "granularity": granularity,
             "start": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(start)),
             "end": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(end)),
         },
-        headers={"User-Agent": "Veylola-Trade-Bot/2.0"},
+        headers={"User-Agent": "Veylola-Trade-Bot/3.0"},
         timeout=15,
     )
     r.raise_for_status()
-    rows = r.json()
-    if not isinstance(rows, list) or len(rows) < 100:
-        raise RuntimeError("Not enough 5-minute BTC candles")
-    return sorted(
+    raw = r.json()
+    if not isinstance(raw, list) or len(raw) < min(80, count):
+        raise RuntimeError(f"Not enough candles for {product} {granularity}s")
+    rows = sorted(
         [
             {
                 "time": int(x[0]),
@@ -54,13 +54,21 @@ def candles():
                 "close": float(x[4]),
                 "volume": float(x[5]),
             }
-            for x in rows
+            for x in raw
         ],
         key=lambda x: x["time"],
     )
+    # Avoid basing a signal on a candle that may still be forming.
+    return rows[:-1] if len(rows) > 80 else rows
+
+
+def candles():
+    return fetch_candles("BTC-USD", 300, 200)
 
 
 def ema(values, period):
+    if len(values) < period:
+        raise ValueError(f"Need at least {period} values")
     k = 2 / (period + 1)
     value = values[0]
     for item in values[1:]:
@@ -69,6 +77,8 @@ def ema(values, period):
 
 
 def rsi(values, period=14):
+    if len(values) <= period:
+        raise ValueError("Not enough values for RSI")
     gains, losses = [], []
     for i in range(1, len(values)):
         change = values[i] - values[i - 1]
@@ -83,6 +93,8 @@ def rsi(values, period=14):
 
 
 def atr(rows, period=14):
+    if len(rows) <= period:
+        raise ValueError("Not enough candles for ATR")
     true_ranges = []
     for i in range(1, len(rows)):
         true_ranges.append(
@@ -102,8 +114,6 @@ def macd(values):
     fast = ema(values[-120:], 12)
     slow = ema(values[-120:], 26)
     line = fast - slow
-
-    # A small MACD history gives a more useful histogram direction.
     history = []
     for end in range(40, len(values) + 1):
         sample = values[max(0, end - 120):end]
@@ -126,66 +136,139 @@ def volume_ratio(rows, period=20):
     return recent / average if average else 0
 
 
+def adx(rows, period=14):
+    # Wilder-style ADX. Higher values indicate a stronger trend regime.
+    if len(rows) < period * 2 + 2:
+        return 0.0
+    trs, plus_dm, minus_dm = [], [], []
+    for i in range(1, len(rows)):
+        high, low, prev_close = rows[i]["high"], rows[i]["low"], rows[i - 1]["close"]
+        up = high - rows[i - 1]["high"]
+        down = rows[i - 1]["low"] - low
+        trs.append(max(high - low, abs(high - prev_close), abs(low - prev_close)))
+        plus_dm.append(up if up > down and up > 0 else 0)
+        minus_dm.append(down if down > up and down > 0 else 0)
+
+    atr_v = sum(trs[:period]) / period
+    plus_v = sum(plus_dm[:period]) / period
+    minus_v = sum(minus_dm[:period]) / period
+    dx = []
+
+    for i in range(period, len(trs)):
+        atr_v = (atr_v * (period - 1) + trs[i]) / period
+        plus_v = (plus_v * (period - 1) + plus_dm[i]) / period
+        minus_v = (minus_v * (period - 1) + minus_dm[i]) / period
+        plus_di = 100 * plus_v / atr_v if atr_v else 0
+        minus_di = 100 * minus_v / atr_v if atr_v else 0
+        dx.append(100 * abs(plus_di - minus_di) / (plus_di + minus_di) if plus_di + minus_di else 0)
+
+    return ema(dx[-period:], period) if len(dx) >= period else sum(dx) / len(dx)
+
+
+def trend_snapshot(rows):
+    closes = [x["close"] for x in rows]
+    price = closes[-1]
+    e20 = ema(closes[-100:], 20)
+    e50 = ema(closes[-150:], 50)
+    e200 = ema(closes[-200:], 200) if len(closes) >= 200 else ema(closes, min(100, len(closes)))
+    return {
+        "price": price,
+        "ema20": e20,
+        "ema50": e50,
+        "ema200": e200,
+        "trend_up": price > e20 > e50,
+        "long_term_up": price > e200,
+    }
+
+
 def market_summary():
     rows = candles()
     closes = [x["close"] for x in rows]
     price = closes[-1]
 
-    ema20 = ema(closes[-100:], 20)
-    ema50 = ema(closes[-150:], 50)
-    ema200 = ema(closes[-200:], 200) if len(closes) >= 200 else ema(closes, min(100, len(closes)))
+    # 5m execution timeframe plus 1h regime filter.
+    hourly = fetch_candles("BTC-USD", 3600, 120)
+    short = trend_snapshot(rows)
+    higher = trend_snapshot(hourly)
+
     rsi14 = rsi(closes)
     atr14 = atr(rows)
     atr_pct = atr14 / price * 100
     macd_line, macd_signal, macd_hist = macd(closes)
     bb_mid, bb_upper, bb_lower = bollinger(closes)
     vol_ratio = volume_ratio(rows)
+    adx14 = adx(rows)
 
-    trend_up = price > ema20 > ema50
-    long_term_up = price > ema200
+    trend_up = short["trend_up"]
+    higher_tf_up = higher["trend_up"] and higher["long_term_up"]
     momentum_ok = 50 <= rsi14 <= 68
     macd_ok = macd_line > macd_signal and macd_hist > 0
     volume_ok = vol_ratio >= 1.05
     volatility_ok = 0.05 <= atr_pct <= 1.50
+    trend_strength_ok = adx14 >= 18
     not_overextended = price <= bb_upper
-    gross_reward_risk = 2.2
+    price_above_mid = price >= bb_mid
 
-    # Score independent confirmations before asking the language model.
     checks = {
-        "trend": trend_up,
-        "long_term_trend": long_term_up,
+        "5m_trend": trend_up,
+        "1h_trend_alignment": higher_tf_up,
         "momentum": momentum_ok,
         "macd": macd_ok,
         "volume": volume_ok,
         "volatility": volatility_ok,
+        "trend_strength": trend_strength_ok,
         "not_overextended": not_overextended,
+        "above_bollinger_mid": price_above_mid,
     }
-    score = sum(1 for passed in checks.values() if passed) / len(checks) * 100
-    deterministic_buy = score >= MIN_SIGNAL_SCORE
 
-    # Volatility-based exits adapt to the market instead of fixed percentages.
-    stop_distance = max(1.5 * atr14, price * 0.004)
+    # Weighted score: higher timeframe and trend structure carry more weight.
+    weights = {
+        "5m_trend": 1.4,
+        "1h_trend_alignment": 2.0,
+        "momentum": 1.0,
+        "macd": 1.2,
+        "volume": 0.8,
+        "volatility": 0.8,
+        "trend_strength": 1.3,
+        "not_overextended": 0.8,
+        "above_bollinger_mid": 0.7,
+    }
+    score = 100 * sum(weights[k] for k, v in checks.items() if v) / sum(weights.values())
+
+    # Adaptive exits: wider in volatile markets, but never below a minimum distance.
+    stop_distance = max(1.6 * atr14, price * 0.004)
     stop_loss = price - stop_distance
-    take_profit = price + stop_distance * gross_reward_risk
+    take_profit = price + stop_distance * 2.2
 
     estimated_round_trip_cost_pct = 2 * (FEE_PCT + SLIPPAGE_PCT)
     expected_move_pct = (take_profit - price) / price * 100
     cost_buffer_ok = expected_move_pct > estimated_round_trip_cost_pct * 1.5
 
+    deterministic_buy = (
+        score >= MIN_SIGNAL_SCORE
+        and cost_buffer_ok
+        and higher_tf_up
+        and trend_strength_ok
+    )
+
     if not cost_buffer_ok:
-        deterministic_buy = False
         score = min(score, MIN_SIGNAL_SCORE - 1)
 
     return {
         "symbol": SYMBOL,
         "timeframe": "5m",
+        "higher_timeframe": "1h",
         "price": price,
-        "ema20": ema20,
-        "ema50": ema50,
-        "ema200": ema200,
+        "ema20": short["ema20"],
+        "ema50": short["ema50"],
+        "ema200": short["ema200"],
+        "higher_tf_ema20": higher["ema20"],
+        "higher_tf_ema50": higher["ema50"],
+        "higher_tf_ema200": higher["ema200"],
         "rsi14": rsi14,
         "atr14": atr14,
         "atr_pct": atr_pct,
+        "adx14": adx14,
         "macd": macd_line,
         "macd_signal": macd_signal,
         "macd_histogram": macd_hist,
@@ -198,7 +281,7 @@ def market_summary():
         "deterministic_action": "BUY" if deterministic_buy else "HOLD",
         "stop_loss": stop_loss,
         "take_profit": take_profit,
-        "risk_reward": f"1:{gross_reward_risk}",
+        "risk_reward": "1:2.2",
         "estimated_round_trip_cost_pct": estimated_round_trip_cost_pct,
         "cost_buffer_ok": cost_buffer_ok,
         "source": "Coinbase Exchange BTC-USD",
@@ -206,20 +289,22 @@ def market_summary():
 
 
 def groq_decision(summary):
-    prompt = f"""You are a conservative crypto trading confirmation engine.
-Use ONLY the supplied market data. The deterministic strategy has already
-filtered the setup. Your job is to reject weak or contradictory setups.
+    prompt = f"""You are the second-stage confirmation engine for a conservative
+crypto trading system. The numeric strategy is authoritative for market data.
+Use ONLY the supplied data.
 
-Return ONLY JSON:
+Return ONLY valid JSON:
 {{"confirm":"BUY|HOLD","confidence":0-100,"reason":"short reason",
 "risk_flags":["..."]}}
 
 Rules:
-- Confirm BUY only when the signal score is strong and multiple indicators agree.
-- Reject if trend, momentum, MACD, volume, volatility or cost conditions conflict.
-- Never invent market data.
-- Never promise profit.
-- Never override the risk limits.
+- Confirm BUY only if the deterministic action is BUY.
+- Require 1h and 5m trend alignment, adequate trend strength and several
+  independent confirmations.
+- Prefer HOLD when indicators disagree or the setup is extended.
+- Never invent prices, news, volume, or other data.
+- Never promise profit and never override risk controls.
+- If uncertain, return HOLD.
 
 Market data:
 {json.dumps(summary)}
@@ -240,7 +325,7 @@ def busha_pairs():
     r = requests.get(
         "https://api.busha.co/v1/pairs",
         params={"currency": "NGN", "type": "crypto"},
-        headers={"User-Agent": "Veylola-Trade/2.0"},
+        headers={"User-Agent": "Veylola-Trade/3.0"},
         timeout=15,
     )
     r.raise_for_status()
@@ -259,7 +344,11 @@ def main():
     summary = market_summary()
     ai = groq_decision(summary)
 
-    ai_confidence = float(ai.get("confidence", 0))
+    try:
+        ai_confidence = float(ai.get("confidence", 0))
+    except (TypeError, ValueError):
+        ai_confidence = 0
+
     final_action = (
         "BUY"
         if summary["deterministic_action"] == "BUY"
@@ -281,7 +370,7 @@ def main():
             "fee_pct": FEE_PCT,
             "slippage_pct": SLIPPAGE_PCT,
             "leverage": 0,
-            "execution": "disabled" if not LIVE_TRADING else "blocked",
+            "execution": "disabled",
         },
     }
 
