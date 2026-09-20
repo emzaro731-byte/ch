@@ -7,8 +7,13 @@ from datetime import datetime, timezone
 import requests
 from groq import Groq
 
+MARKET = os.getenv("MARKET", "crypto").lower()
 SYMBOL = os.getenv("SYMBOL", "BTCUSDT").upper()
 PRODUCT = os.getenv("PRODUCT", "BTC-USD")
+FOREX_PAIRS = [x.strip().upper() for x in os.getenv(
+    "FOREX_PAIRS", "EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF,NZDUSD"
+).split(",") if x.strip()]
+
 QUOTE_AMOUNT = float(os.getenv("QUOTE_AMOUNT", "5"))
 MAX_POSITION_USDT = float(os.getenv("MAX_POSITION_USDT", "5"))
 RISK_PER_TRADE_PCT = float(os.getenv("RISK_PER_TRADE_PCT", "0.5"))
@@ -26,7 +31,14 @@ LIVE_TRADING = False
 groq = Groq(api_key=os.environ["GROQ_API_KEY"])
 
 
+def forex_yahoo_symbol(pair):
+    if len(pair) != 6:
+        raise ValueError(f"Invalid forex pair: {pair}")
+    return f"{pair[:3]}{pair[3:]}=X"
+
+
 def fetch_candles(product=PRODUCT, granularity=300, count=200):
+    """Crypto OHLCV from Coinbase."""
     end = int(time.time())
     start = end - count * granularity
     r = requests.get(
@@ -36,25 +48,58 @@ def fetch_candles(product=PRODUCT, granularity=300, count=200):
             "start": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(start)),
             "end": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(end)),
         },
-        headers={"User-Agent": "Veylola-Trade-Bot/4.0"},
+        headers={"User-Agent": "Veylola-Trade-Bot/5.0"},
         timeout=15,
     )
     r.raise_for_status()
     raw = r.json()
     if not isinstance(raw, list) or len(raw) < min(80, count):
         raise RuntimeError(f"Not enough candles for {product} {granularity}s")
-    rows = sorted(
-        [{
-            "time": int(x[0]), "low": float(x[1]), "high": float(x[2]),
-            "open": float(x[3]), "close": float(x[4]), "volume": float(x[5])
-        } for x in raw],
-        key=lambda x: x["time"],
-    )
+    rows = sorted([{
+        "time": int(x[0]), "low": float(x[1]), "high": float(x[2]),
+        "open": float(x[3]), "close": float(x[4]), "volume": float(x[5])
+    } for x in raw], key=lambda x: x["time"])
     return rows[:-1] if len(rows) > 80 else rows
 
 
-def candles():
-    return fetch_candles(PRODUCT, 300, 200)
+def fetch_forex_candles(pair, interval="5m", count=200):
+    """Public Yahoo Finance market data for forex analysis only."""
+    symbol = forex_yahoo_symbol(pair)
+    range_map = {"5m": "5d", "1h": "1mo"}
+    if interval not in range_map:
+        raise ValueError("Unsupported forex interval")
+    r = requests.get(
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+        params={"range": range_map[interval], "interval": interval, "events": "history"},
+        headers={"User-Agent": "Veylola-Trade-Bot/5.0"},
+        timeout=15,
+    )
+    r.raise_for_status()
+    data = r.json()["chart"]["result"][0]
+    timestamps = data.get("timestamp") or []
+    quote = data["indicators"]["quote"][0]
+    rows = []
+    for i, ts in enumerate(timestamps):
+        if quote["open"][i] is None or quote["high"][i] is None or quote["low"][i] is None or quote["close"][i] is None:
+            continue
+        rows.append({
+            "time": int(ts),
+            "low": float(quote["low"][i]),
+            "high": float(quote["high"][i]),
+            "open": float(quote["open"][i]),
+            "close": float(quote["close"][i]),
+            "volume": float(quote.get("volume", [0] * len(timestamps))[i] or 0),
+        })
+    if len(rows) < 80:
+        raise RuntimeError(f"Not enough forex candles for {pair} {interval}")
+    return rows[:-1]
+
+
+def get_market_candles(symbol, interval="5m", count=200):
+    if MARKET == "forex":
+        return fetch_forex_candles(symbol, interval, count)
+    granularity = 300 if interval == "5m" else 3600
+    return fetch_candles(PRODUCT, granularity, count)
 
 
 def ema(values, period):
@@ -119,8 +164,12 @@ def bollinger(values, period=20, deviations=2):
 
 
 def volume_ratio(rows, period=20):
-    avg = sum(x["volume"] for x in rows[-period - 1:-1]) / period
-    return rows[-1]["volume"] / avg if avg else 0
+    volumes = [x["volume"] for x in rows]
+    avg = sum(volumes[-period - 1:-1]) / period
+    if avg <= 0:
+        # Spot FX feeds commonly have no centralized volume.
+        return 1.0
+    return volumes[-1] / avg
 
 
 def adx(rows, period=14):
@@ -151,9 +200,8 @@ def adx(rows, period=14):
 
 def trend_snapshot(rows):
     closes = [x["close"] for x in rows]
-    price = closes[-1]
     return {
-        "price": price,
+        "price": closes[-1],
         "ema20": ema(closes[-100:], 20),
         "ema50": ema(closes[-150:], 50),
         "ema200": ema(closes[-200:], 200) if len(closes) >= 200 else ema(closes, min(100, len(closes))),
@@ -167,11 +215,11 @@ def pivot_levels(rows, lookback=60):
     return support, resistance
 
 
-def market_summary():
-    rows = candles()
+def market_summary(symbol):
+    rows = get_market_candles(symbol, "5m", 200)
+    hourly = get_market_candles(symbol, "1h", 120)
     closes = [x["close"] for x in rows]
     price = closes[-1]
-    hourly = fetch_candles(PRODUCT, 3600, 120)
     short = trend_snapshot(rows)
     higher = trend_snapshot(hourly)
 
@@ -189,11 +237,13 @@ def market_summary():
     momentum_ok = 50 <= rsi14 <= 68
     macd_ok = macd_line > macd_signal and macd_hist > 0
     volume_ok = vol_ratio >= 1.05
-    volatility_ok = 0.05 <= atr_pct <= 1.50
+    volatility_ok = (0.05 <= atr_pct <= 1.50) if MARKET != "forex" else (0.002 <= atr_pct <= 0.50)
     trend_strength_ok = adx14 >= 18
     not_overextended = price <= bb_upper * 0.997
     price_above_mid = price >= bb_mid
-    room_to_resistance = resistance > price and ((resistance - price) / price * 100) >= max(0.25, atr_pct * 0.7)
+    room_to_resistance = resistance > price and ((resistance - price) / price * 100) >= max(
+        0.05 if MARKET == "forex" else 0.25, atr_pct * 0.7
+    )
     support_ok = support < price
 
     checks = {
@@ -201,7 +251,7 @@ def market_summary():
         "1h_trend_alignment": higher_tf_up,
         "momentum": momentum_ok,
         "macd": macd_ok,
-        "volume": volume_ok,
+        "volume_or_fx_activity": volume_ok,
         "volatility": volatility_ok,
         "trend_strength": trend_strength_ok,
         "not_overextended": not_overextended,
@@ -211,14 +261,14 @@ def market_summary():
     }
     weights = {
         "5m_trend": 1.3, "1h_trend_alignment": 2.0, "momentum": 0.9,
-        "macd": 1.1, "volume": 0.7, "volatility": 0.7,
+        "macd": 1.1, "volume_or_fx_activity": 0.7, "volatility": 0.7,
         "trend_strength": 1.3, "not_overextended": 0.8,
         "above_bollinger_mid": 0.6, "room_to_resistance": 0.8,
         "support_structure": 0.5,
     }
     score = 100 * sum(weights[k] for k, v in checks.items() if v) / sum(weights.values())
 
-    stop_distance = max(1.6 * atr14, price * 0.004)
+    stop_distance = max(1.6 * atr14, price * (0.001 if MARKET == "forex" else 0.004))
     stop_loss = max(price - stop_distance, support * 0.995)
     actual_risk = price - stop_loss
     if actual_risk <= 0:
@@ -243,7 +293,10 @@ def market_summary():
         score = min(score, MIN_SIGNAL_SCORE - 1)
 
     return {
-        "symbol": SYMBOL, "timeframe": "5m", "higher_timeframe": "1h",
+        "market": MARKET,
+        "symbol": symbol,
+        "timeframe": "5m",
+        "higher_timeframe": "1h",
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "price": price,
         "ema20": short["ema20"], "ema50": short["ema50"], "ema200": short["ema200"],
@@ -252,20 +305,21 @@ def market_summary():
         "rsi14": rsi14, "atr14": atr14, "atr_pct": atr_pct, "adx14": adx14,
         "macd": macd_line, "macd_signal": macd_signal, "macd_histogram": macd_hist,
         "bollinger_mid": bb_mid, "bollinger_upper": bb_upper, "bollinger_lower": bb_lower,
-        "volume_ratio": vol_ratio, "support": support, "resistance": resistance,
+        "activity_ratio": vol_ratio, "support": support, "resistance": resistance,
         "signal_score": round(score, 1), "checks": checks,
         "deterministic_action": "BUY" if deterministic_buy else "HOLD",
         "stop_loss": stop_loss, "take_profit": take_profit,
         "risk_reward": round((take_profit - price) / actual_risk, 2),
         "estimated_round_trip_cost_pct": round_trip_cost_pct,
         "cost_buffer_ok": cost_buffer_ok,
-        "source": f"Coinbase Exchange {PRODUCT}",
+        "data_source": "Yahoo Finance public market data" if MARKET == "forex" else f"Coinbase Exchange {PRODUCT}",
+        "execution": "paper_only",
     }
 
 
 def groq_decision(summary):
     prompt = f"""You are the second-stage confirmation engine for a conservative
-crypto trading system. Numeric market data and risk rules are authoritative.
+market-analysis system. Numeric market data and risk rules are authoritative.
 
 Return ONLY valid JSON:
 {{"confirm":"BUY|HOLD","confidence":0-100,"reason":"short reason","risk_flags":["..."]}}
@@ -273,7 +327,8 @@ Return ONLY valid JSON:
 Rules:
 - Confirm BUY only when deterministic_action is BUY.
 - Require both 5m and 1h trend alignment.
-- Require strong trend, momentum, volume and MACD agreement.
+- Require strong trend, momentum and MACD agreement.
+- For forex, do not treat spot FX volume as centralized exchange volume.
 - Reject if price is overextended or too close to resistance.
 - Check that expected move is meaningfully larger than estimated costs.
 - Never invent data, news, or certainty.
@@ -301,17 +356,16 @@ Market data:
 def execute(action, price):
     if QUOTE_AMOUNT <= 0 or QUOTE_AMOUNT > MAX_POSITION_USDT:
         return "blocked: position limit"
-    return f"PAPER {action} @ {price:.2f} (no real order sent)"
+    return f"PAPER {action} @ {price:.5f} (no real order sent)"
 
 
-def main():
-    summary = market_summary()
+def analyze_symbol(symbol):
+    summary = market_summary(symbol)
     ai = groq_decision(summary)
     try:
         ai_confidence = float(ai.get("confidence", 0))
     except (TypeError, ValueError):
         ai_confidence = 0
-
     final_action = (
         "BUY"
         if summary["deterministic_action"] == "BUY"
@@ -319,11 +373,30 @@ def main():
         and ai_confidence >= MIN_AI_CONFIDENCE
         else "HOLD"
     )
-
-    output = {
+    return {
         "market": summary,
         "ai_confirmation": ai,
         "final_action": final_action,
+    }
+
+
+def main():
+    symbols = FOREX_PAIRS if MARKET == "forex" else [SYMBOL]
+    results = []
+    for symbol in symbols:
+        try:
+            results.append(analyze_symbol(symbol))
+        except Exception as exc:
+            results.append({
+                "market": MARKET, "symbol": symbol,
+                "final_action": "HOLD",
+                "error": str(exc),
+            })
+
+    output = {
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "market_mode": MARKET,
+        "results": results,
         "risk": {
             "risk_per_trade_pct": RISK_PER_TRADE_PCT,
             "max_daily_loss_pct": MAX_DAILY_LOSS_PCT,
@@ -334,11 +407,15 @@ def main():
             "slippage_pct": SLIPPAGE_PCT,
             "leverage": 0,
             "execution": "paper_only",
+            "ai_min_confidence": MIN_AI_CONFIDENCE,
         },
     }
     print(json.dumps(output, indent=2))
-    print(execute(final_action, summary["price"]) if final_action == "BUY"
-          else "HOLD: setup did not pass all AI and risk filters")
+    for item in results:
+        if item.get("final_action") == "BUY":
+            print(execute("BUY", item["market"]["price"]))
+        else:
+            print(f'HOLD: {item.get("market", {}).get("symbol", item.get("symbol", "unknown"))}')
 
 
 if __name__ == "__main__":
