@@ -13,7 +13,7 @@ QUOTE_AMOUNT = float(os.getenv("QUOTE_AMOUNT", "5"))
 MAX_POSITION_USDT = float(os.getenv("MAX_POSITION_USDT", "5"))
 STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", "2"))
 TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "3"))
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
 # Safety: live trading requires an explicit two-part opt-in.
 LIVE_TRADING = (
@@ -29,35 +29,41 @@ groq = Groq(api_key=os.environ["GROQ_API_KEY"])
 
 
 def candles(limit=100):
+    # CoinGecko provides public BTC/USD market data without using Binance market endpoints.
     r = requests.get(
-        f"{BINANCE_BASE}/api/v3/klines",
-        params={"symbol": SYMBOL, "interval": "5m", "limit": limit},
+        "https://api.coingecko.com/api/v3/simple/price",
+        params={
+            "ids": "bitcoin",
+            "vs_currencies": "usd",
+            "include_24hr_change": "true",
+            "include_24hr_high": "true",
+            "include_24hr_low": "true",
+        },
         timeout=15,
     )
     r.raise_for_status()
-    return r.json()
+    btc = r.json().get("bitcoin")
+    if not btc or "usd" not in btc:
+        raise RuntimeError("CoinGecko returned no BTC/USD price")
+    return btc
 
 
 def market_summary():
-    data = candles()
-    closes = [float(x[4]) for x in data]
-    current = closes[-1]
-
-    def sma(n):
-        return sum(closes[-n:]) / n
-
+    btc = candles()
+    current = float(btc["usd"])
     return {
         "symbol": SYMBOL,
         "price": current,
-        "sma20": sma(20),
-        "sma50": sma(50),
-        "change_20_candles_pct": (current / closes[-21] - 1) * 100,
+        "change_24h_pct": float(btc.get("usd_24h_change") or 0),
+        "high_24h": float(btc.get("usd_24h_high") or 0),
+        "low_24h": float(btc.get("usd_24h_low") or 0),
+        "source": "CoinGecko BTC/USD",
     }
 
 
 def groq_decision(summary):
     prompt = f"""You are a conservative crypto trading analysis engine.
-Analyze this 5-minute market snapshot: {json.dumps(summary)}.
+Analyze this BTC market snapshot: {json.dumps(summary)}.
 
 Return ONLY valid JSON:
 {{"action":"BUY|SELL|HOLD","confidence":0-100,"reason":"short reason"}}
