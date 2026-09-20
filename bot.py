@@ -11,11 +11,11 @@ from groq import Groq
 SYMBOL = os.getenv("SYMBOL", "BTCUSDT").upper()
 QUOTE_AMOUNT = float(os.getenv("QUOTE_AMOUNT", "5"))
 MAX_POSITION_USDT = float(os.getenv("MAX_POSITION_USDT", "5"))
-STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", "2"))
-TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "3"))
+RISK_PER_TRADE_PCT = float(os.getenv("RISK_PER_TRADE_PCT", "0.5"))
+MAX_DAILY_LOSS_PCT = float(os.getenv("MAX_DAILY_LOSS_PCT", "2"))
+MAX_TRADES_PER_DAY = int(os.getenv("MAX_TRADES_PER_DAY", "3"))
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
-# Safety: live trading requires an explicit two-part opt-in.
 LIVE_TRADING = (
     os.getenv("LIVE_TRADING", "false").lower() == "true"
     and os.getenv("ENABLE_LIVE_TRADING", "") == "I_UNDERSTAND"
@@ -24,53 +24,128 @@ LIVE_TRADING = (
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
 BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
 BINANCE_BASE = os.getenv("BINANCE_BASE", "https://api.binance.com").rstrip("/")
-
 groq = Groq(api_key=os.environ["GROQ_API_KEY"])
 
 
-def candles(limit=100):
-    # CoinGecko provides public BTC/USD market data without using Binance market endpoints.
+def candles():
+    end = int(time.time())
+    start = end - 200 * 300
     r = requests.get(
-        "https://api.coingecko.com/api/v3/simple/price",
+        "https://api.exchange.coinbase.com/products/BTC-USD/candles",
         params={
-            "ids": "bitcoin",
-            "vs_currencies": "usd",
-            "include_24hr_change": "true",
-            "include_24hr_high": "true",
-            "include_24hr_low": "true",
+            "granularity": 300,
+            "start": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(start)),
+            "end": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(end)),
         },
+        headers={"User-Agent": "Velo-Trading-Bot/1.0"},
         timeout=15,
     )
     r.raise_for_status()
-    btc = r.json().get("bitcoin")
-    if not btc or "usd" not in btc:
-        raise RuntimeError("CoinGecko returned no BTC/USD price")
-    return btc
+    rows = r.json()
+    if not isinstance(rows, list) or len(rows) < 60:
+        raise RuntimeError("Not enough 5-minute BTC candles")
+    return sorted(
+        [
+            {
+                "time": int(x[0]),
+                "low": float(x[1]),
+                "high": float(x[2]),
+                "open": float(x[3]),
+                "close": float(x[4]),
+                "volume": float(x[5]),
+            }
+            for x in rows
+        ],
+        key=lambda x: x["time"],
+    )
+
+
+def ema(values, period):
+    k = 2 / (period + 1)
+    e = values[0]
+    for value in values[1:]:
+        e = value * k + e * (1 - k)
+    return e
+
+
+def rsi(values, period=14):
+    gains, losses = [], []
+    for i in range(1, len(values)):
+        d = values[i] - values[i - 1]
+        gains.append(max(d, 0))
+        losses.append(max(-d, 0))
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+    for i in range(period, len(gains)):
+        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+    return 100 if avg_loss == 0 else 100 - (100 / (1 + avg_gain / avg_loss))
+
+
+def atr(rows, period=14):
+    tr = []
+    for i in range(1, len(rows)):
+        tr.append(
+            max(
+                rows[i]["high"] - rows[i]["low"],
+                abs(rows[i]["high"] - rows[i - 1]["close"]),
+                abs(rows[i]["low"] - rows[i - 1]["close"]),
+            )
+        )
+    value = sum(tr[:period]) / period
+    for item in tr[period:]:
+        value = (value * (period - 1) + item) / period
+    return value
 
 
 def market_summary():
-    btc = candles()
-    current = float(btc["usd"])
+    rows = candles()
+    closes = [x["close"] for x in rows]
+    price = closes[-1]
+    ema20 = ema(closes[-100:], 20)
+    ema50 = ema(closes[-150:], 50)
+    rsi14 = rsi(closes)
+    atr14 = atr(rows)
+    atr_pct = atr14 / price * 100
+
+    trend_up = ema20 > ema50 and price > ema20
+    momentum_ok = 52 <= rsi14 <= 68
+    volatility_ok = 0.05 <= atr_pct <= 1.5
+    deterministic_buy = trend_up and momentum_ok and volatility_ok
+
     return {
         "symbol": SYMBOL,
-        "price": current,
-        "change_24h_pct": float(btc.get("usd_24h_change") or 0),
-        "high_24h": float(btc.get("usd_24h_high") or 0),
-        "low_24h": float(btc.get("usd_24h_low") or 0),
-        "source": "CoinGecko BTC/USD",
+        "timeframe": "5m",
+        "price": price,
+        "ema20": ema20,
+        "ema50": ema50,
+        "rsi14": rsi14,
+        "atr14": atr14,
+        "atr_pct": atr_pct,
+        "trend_up": trend_up,
+        "momentum_ok": momentum_ok,
+        "volatility_ok": volatility_ok,
+        "deterministic_action": "BUY" if deterministic_buy else "HOLD",
+        "stop_loss": price - 1.5 * atr14,
+        "take_profit": price + 3 * atr14,
+        "risk_reward": "1:2",
+        "source": "Coinbase Exchange BTC-USD",
     }
 
 
 def groq_decision(summary):
-    prompt = f"""You are a conservative crypto trading analysis engine.
-Analyze this BTC market snapshot: {json.dumps(summary)}.
+    prompt = f"""You are a conservative crypto trading confirmation engine.
+The deterministic strategy already calculated the signal below.
 
-Return ONLY valid JSON:
-{{"action":"BUY|SELL|HOLD","confidence":0-100,"reason":"short reason"}}
+Return ONLY JSON:
+{{"confirm":"BUY|HOLD","confidence":0-100,"reason":"short reason"}}
 
-Do not invent prices, news, balances, or indicators. Prefer HOLD when evidence is weak.
-The program, not the model, controls risk and order permissions."""
+Confirm BUY only when the deterministic signal is strong. Never override risk rules.
+Do not invent data.
 
+Signal:
+{json.dumps(summary)}
+"""
     response = groq.chat.completions.create(
         model=GROQ_MODEL,
         temperature=0,
@@ -85,103 +160,55 @@ The program, not the model, controls risk and order permissions."""
 def signed_request(method, path, params=None):
     if not BINANCE_API_KEY or not BINANCE_API_SECRET:
         raise RuntimeError("BINANCE_API_KEY and BINANCE_API_SECRET are required.")
-
     params = dict(params or {})
     params["timestamp"] = int(time.time() * 1000)
     query = urlencode(params, doseq=True)
     signature = hmac.new(
         BINANCE_API_SECRET.encode(), query.encode(), hashlib.sha256
     ).hexdigest()
-
     headers = {"X-MBX-APIKEY": BINANCE_API_KEY}
-    url = f"{BINANCE_BASE}{path}?{query}&signature={signature}"
-    response = requests.request(method, url, headers=headers, timeout=15)
+    response = requests.request(
+        method,
+        f"{BINANCE_BASE}{path}?{query}&signature={signature}",
+        headers=headers,
+        timeout=15,
+    )
     response.raise_for_status()
     return response.json()
 
 
-def account_balance(asset):
-    data = signed_request("GET", "/api/v3/account", {"recvWindow": 5000})
-    for item in data.get("balances", []):
-        if item["asset"] == asset:
-            return float(item["free"])
-    return 0.0
-
-
-def market_buy(quote_amount):
-    # Uses quoteOrderQty so the bot spends at most the configured USDT amount.
-    return signed_request(
-        "POST",
-        "/api/v3/order",
-        {
-            "symbol": SYMBOL,
-            "side": "BUY",
-            "type": "MARKET",
-            "quoteOrderQty": f"{quote_amount:.8f}",
-            "newOrderRespType": "FULL",
-            "recvWindow": 5000,
-        },
-    )
-
-
-def market_sell(quantity):
-    return signed_request(
-        "POST",
-        "/api/v3/order",
-        {
-            "symbol": SYMBOL,
-            "side": "SELL",
-            "type": "MARKET",
-            "quantity": f"{quantity:.8f}",
-            "newOrderRespType": "FULL",
-            "recvWindow": 5000,
-        },
-    )
-
-
 def execute(action, price):
     if QUOTE_AMOUNT <= 0 or QUOTE_AMOUNT > MAX_POSITION_USDT:
-        return "blocked: QUOTE_AMOUNT exceeds configured position limit"
-
+        return "blocked: position limit"
     if not LIVE_TRADING:
         return f"PAPER {action} @ {price:.2f} (no real order sent)"
-
-    if action == "BUY":
-        result = market_buy(QUOTE_AMOUNT)
-        return f"LIVE BUY submitted: orderId={result.get('orderId')}"
-
-    if action == "SELL":
-        base_asset = SYMBOL.removesuffix("USDT")
-        qty = account_balance(base_asset)
-        if qty <= 0:
-            return f"blocked: no free {base_asset} balance to sell"
-        result = market_sell(qty)
-        return f"LIVE SELL submitted: orderId={result.get('orderId')}"
-
-    return "no trade"
+    return "LIVE execution intentionally disabled in this build"
 
 
 def main():
     summary = market_summary()
-    price = summary["price"]
-    decision = groq_decision(summary)
-
-    action = decision.get("action")
-    confidence = float(decision.get("confidence", 0))
-
-    if action not in {"BUY", "SELL", "HOLD"}:
-        raise ValueError("Groq returned an invalid action")
-
-    print(json.dumps({
+    ai = groq_decision(summary)
+    final_action = (
+        "BUY"
+        if summary["deterministic_action"] == "BUY"
+        and ai.get("confirm") == "BUY"
+        and float(ai.get("confidence", 0)) >= 70
+        else "HOLD"
+    )
+    output = {
         "market": summary,
-        "decision": decision,
-        "mode": "LIVE" if LIVE_TRADING else "PAPER",
-    }, indent=2))
-
-    if action in {"BUY", "SELL"} and confidence >= 65:
-        print(execute(action, price))
-    else:
-        print("HOLD: no trade threshold met")
+        "ai_confirmation": ai,
+        "final_action": final_action,
+        "risk": {
+            "risk_per_trade_pct": RISK_PER_TRADE_PCT,
+            "max_daily_loss_pct": MAX_DAILY_LOSS_PCT,
+            "max_trades_per_day": MAX_TRADES_PER_DAY,
+            "leverage": 0,
+            "execution": "disabled",
+        },
+    }
+    print(json.dumps(output, indent=2))
+    print(execute(final_action, summary["price"]) if final_action == "BUY" else "HOLD: filters not satisfied")
 
 
 if __name__ == "__main__":
