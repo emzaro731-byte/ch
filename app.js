@@ -37,3 +37,24 @@ let terminalSide="BUY";function drawTerminal(){const c=$("#terminalChart"),ctx=c
 async function terminalBook(){try{const p=$("#terminalPairSelect").value==="BTCUSDT"?"BTC-USD":$("#terminalPairSelect").value==="ETHUSDT"?"ETH-USD":"SOL-USD";const r=await fetch("https://api.exchange.coinbase.com/products/"+p+"/book?level=2");const j=await r.json();const row=(x,cl)=>"<div class='bookrow "+cl+"'><span>"+Number(x[0]).toFixed(2)+"</span><span>"+Number(x[1]).toFixed(5)+"</span><span>"+(Number(x[0])*Number(x[1])).toFixed(2)+"</span></div>";$("#terminalAsks").innerHTML=(j.asks||[]).slice(-7).reverse().map(x=>row(x,"askrow")).join("");$("#terminalBids").innerHTML=(j.bids||[]).slice(0,7).map(x=>row(x,"bidrow")).join("");$("#terminalMid").textContent=price?money(price):"—"}catch(e){}}
 const oldRender=render;render=function(){oldRender();if($("#tPrice")){$("#tPrice").textContent=money(price);$("#tHigh").textContent=money(price*1.012);$("#tLow").textContent=money(price*.988);$("#terminalPair").textContent=pairName($("#terminalPairSelect")?.value||"BTCUSDT");const a=Number($("#terminalAmount")?.value)||0;$("#terminalTotal").textContent=money(a*price);drawTerminal()}};
 $("#terminalPairSelect").onchange=()=>{if($("#pair"))$("#pair").value=$("#terminalPairSelect").value;points=[];loadMarket();terminalBook()};$("#terminalAmount").oninput=render;$("#terminalBuy").onclick=()=>{terminalSide="BUY";$("#terminalBuy").classList.add("active");$("#terminalSell").classList.remove("active");$("#terminalOrder").textContent="Buy "+($("#terminalPairSelect").value||"BTCUSDT").replace("USDT","")};$("#terminalSell").onclick=()=>{terminalSide="SELL";$("#terminalSell").classList.add("active");$("#terminalBuy").classList.remove("active");$("#terminalOrder").textContent="Sell "+($("#terminalPairSelect").value||"BTCUSDT").replace("USDT","")};$("#terminalOrder").onclick=()=>{if(!user){alert("Sign in first.");return}event("PAPER",terminalSide+" order simulated");alert("Paper order recorded. Live execution is disabled.");};$("#terminalAnalyze").onclick=runAnalysis;setInterval(()=>{if(user)terminalBook()},15000);window.addEventListener("resize",drawTerminal);
+
+/* Athena-style bot controls. These controls are dashboard state only; real execution stays server-side. */
+const athena={state:"running",runs:0,trades:0,pnl:0};
+function setAthenaState(next){
+  athena.state=next;
+  const box=$("#athenaStatus");
+  box.className="bot-status "+next;
+  $("#athenaStatusText").textContent=next==="running"?"Running":next==="paused"?"Paused":"Stopped";
+  $("#athenaStatusDetail").textContent=next==="running"?"AI strategy monitoring":next==="paused"?"Waiting for resume":"Bot is offline";
+  $("#botState").textContent=next==="running"?"RUNNING":next==="paused"?"PAUSED":"STOPPED";
+  $("#botStateDetail").textContent="Athena control state";
+  event("BOT", "Athena "+next);
+}
+$("#athenaStart").onclick=async()=>{
+  athena.runs++;
+  $("#athenaRuns").textContent=athena.runs;
+  setAthenaState("running");
+  if(user) await runAnalysis();
+};
+$("#athenaPause").onclick=()=>setAthenaState("paused");
+$("#athenaStop").onclick=()=>setAthenaState("stopped");

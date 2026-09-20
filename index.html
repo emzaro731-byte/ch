@@ -20,6 +20,43 @@
 </section>
 <section class="userbar card hidden" id="userBar"><div><span class="eyebrow">CONNECTED</span><strong id="userEmail">—</strong></div><button class="secondary" id="signOutBtn">Sign out</button></section>
 
+
+<section class="athena-bot card" id="athenaBot">
+  <div class="athena-head">
+    <div>
+      <span class="eyebrow">AI AUTOMATION</span>
+      <h2>Athena AI Bot</h2>
+      <div class="athena-meta"><span>Bot ID: <b>athena-01</b></span><span>Account: <b>Demo / Paper</b></span></div>
+    </div>
+    <span class="ai-powered"><i></i> AI POWERED</span>
+  </div>
+
+  <div class="bot-status running" id="athenaStatus">
+    <i class="bot-status-dot"></i>
+    <strong id="athenaStatusText">Running</strong>
+    <span id="athenaStatusDetail">AI strategy monitoring</span>
+  </div>
+
+  <div class="bot-controls">
+    <button class="bot-control bot-start" id="athenaStart"><span>▶</span> Start Bot</button>
+    <button class="bot-control bot-pause" id="athenaPause"><span>Ⅱ</span> Pause Bot</button>
+    <button class="bot-control bot-stop" id="athenaStop"><span>■</span> Stop Bot</button>
+  </div>
+
+  <div class="athena-foot">
+    <span>Strategy <b>AI Momentum</b></span>
+    <span>Signal <b id="athenaSignal">HOLD</b></span>
+    <span>Mode <b>Paper</b></span>
+  </div>
+</section>
+
+<section class="athena-metrics" id="athenaMetrics">
+  <article class="athena-metric pnl"><span>TOTAL P/L</span><strong id="athenaPnl">+$0.00</strong><small>Session result</small></article>
+  <article class="athena-metric runs"><span>TOTAL RUNS</span><strong id="athenaRuns">0</strong><small>Bot sessions</small></article>
+  <article class="athena-metric trades"><span>TOTAL TRADES</span><strong id="athenaTrades">0</strong><small>Signals processed</small></article>
+  <article class="athena-metric win"><span>WIN RATE</span><strong id="athenaWin">—</strong><small>Closed trades</small></article>
+</section>
+
 <section class="binance-like card" id="spotTerminal"><div class="terminal-top"><div><b id="terminalPair">BTC/USDT</b><span> Spot · Live market</span></div><div class="terminal-stats"><span>Last <b id="tPrice">—</b></span><span>24h High <b id="tHigh">—</b></span><span>24h Low <b id="tLow">—</b></span><select id="terminalPairSelect"><option>BTCUSDT</option><option>ETHUSDT</option><option>SOLUSDT</option></select></div></div><div class="terminal-body"><div class="terminal-chart"><div class="terminal-tabs"><b>Chart</b><span>1m</span><span class="active">5m</span><span>15m</span><span>1H</span><span>4H</span><span>Indicators</span></div><div class="big-chart"><canvas id="terminalChart"></canvas></div></div><aside class="terminal-book"><div class="terminal-tabs"><b>Order Book</b><span>Trades</span></div><div class="book-head"><span>Price</span><span>Amount</span><span>Total</span></div><div id="terminalAsks"></div><div class="book-mid" id="terminalMid">—</div><div id="terminalBids"></div></aside></div><div class="terminal-orders"><div class="order-entry"><div class="buy-sell"><button id="terminalBuy" class="active">Buy</button><button id="terminalSell">Sell</button></div><div class="order-types"><button class="active">Market</button><button>Limit</button><button>Stop</button><button>OCO</button></div><label>Amount<input id="terminalAmount" type="number" step="0.000001" placeholder="0.000000"></label><div class="terminal-total">Total <b id="terminalTotal">0 USDT</b></div><button id="terminalOrder" class="primary full">Buy BTC</button><small>Paper trading only — no real order is sent from the browser.</small></div><div class="terminal-ai"><div><span class="eyebrow">VEYLOLA AI</span><h3>AI market analysis</h3></div><strong id="terminalSignal">HOLD</strong><p id="terminalReason">Sign in to run analysis.</p><button class="secondary full" id="terminalAnalyze">Run AI analysis</button></div></div></section><section class="hero" id="dashboard">
  <div><span class="eyebrow">AI CRYPTO TRADING · PAPER FIRST</span><h1>A smarter command center for your trades.</h1><p class="hero-copy">Monitor BTC, review AI analysis, synchronize risk controls and keep execution separated from your public web client.</p><div class="hero-actions"><button class="primary" id="analyzeBtn">Run AI analysis</button><button class="secondary" id="paperBtn">Paper trading: ON</button></div><div class="hero-chips"><span>0% withdrawal access in client</span><span>Risk controls</span><span>Supabase sync</span></div></div>
  <div class="hero-card"><span>BTC/USDT</span><strong id="heroPrice">—</strong><small id="heroUpdated">Waiting for market data</small><div class="spark" id="spark"></div></div>
