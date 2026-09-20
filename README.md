@@ -1,30 +1,43 @@
-# Groq Binance Trading Bot
+# Groq + Binance Trading Bot
 
-A small Python crypto **paper-trading bot** using Binance market data and Groq for structured trade analysis.
+A Python crypto trading bot that uses Groq for market analysis and Binance Spot API for optional order execution.
 
-## Safety first
-- Paper trading is enabled by default.
-- Live orders are disabled unless `LIVE_TRADING=true`.
-- Never give the Binance API key withdrawal permission.
-- Store secrets only in GitHub Actions Secrets.
+## Default safety mode
 
-## Setup
-1. Add `GROQ_API_KEY` to GitHub Secrets.
-2. Optionally add `BINANCE_API_KEY` and `BINANCE_API_SECRET` for authenticated account access.
-3. Run locally with Python 3.11+:
-```bash
-pip install -r requirements.txt
-python bot.py
-```
+**Paper trading is ON by default.** No real Binance order is sent unless BOTH are set:
 
-## Configuration
-Environment variables:
+- `LIVE_TRADING=true`
+- `ENABLE_LIVE_TRADING=I_UNDERSTAND`
+
+The Binance API key should have only the permissions required for Spot trading. Do **not** enable withdrawals. Binance documents API keys and the separate `TRADE` permission in its Spot API documentation.
+
+## GitHub Secrets
+
+In **Settings → Secrets and variables → Actions**, create:
+
+- `GROQ_API_KEY`
+- `BINANCE_API_KEY`
+- `BINANCE_API_SECRET`
+
+Never commit these values to the repository.
+
+## Bot settings
+
 - `SYMBOL=BTCUSDT`
-- `QUOTE_AMOUNT=5` (USDT per trade in paper mode)
-- `LIVE_TRADING=false`
+- `QUOTE_AMOUNT=5`
 - `MAX_POSITION_USDT=5`
 - `STOP_LOSS_PCT=2`
 - `TAKE_PROFIT_PCT=3`
-- `GROQ_MODEL=llama-3.3-70b-versatile`
+- `LIVE_TRADING=false`
 
-This bot is experimental software, not financial advice, and does not guarantee profit.
+The starter bot intentionally keeps live trading disabled in GitHub Actions. Test paper mode first and review the logs.
+
+## Local test
+
+```bash
+pip install -r requirements.txt
+export GROQ_API_KEY="your-key"
+python bot.py
+```
+
+This software is experimental and does not guarantee profit or prevent losses.
