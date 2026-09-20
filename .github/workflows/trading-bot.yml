@@ -48,7 +48,7 @@ jobs:
           BUSHA_BASE_URL: "https://api.sandbox.busha.so"
           BUSHA_QUOTE_CURRENCY: "USDT"
 
-      - name: Run forex AI analysis with OANDA Practice
+      - name: Run forex AI analysis with Busha Sandbox
         run: python bot.py
         env:
           MARKET: forex
@@ -59,7 +59,7 @@ jobs:
           QUOTE_AMOUNT: "5"
           MAX_POSITION_USDT: "5"
           EXECUTION_MODE: "practice"
-          OANDA_API_TOKEN: ${{ secrets.OANDA_API_TOKEN }}
-          OANDA_ACCOUNT_ID: ${{ secrets.OANDA_ACCOUNT_ID }}
-          OANDA_BASE_URL: "https://api-fxpractice.oanda.com"
-          OANDA_UNITS: "1"
+          BUSHA_API_KEY: ${{ secrets.BUSHA_API_KEY }}
+          BUSHA_PROFILE_ID: ${{ secrets.BUSHA_PROFILE_ID }}
+          BUSHA_BASE_URL: "https://api.sandbox.busha.so"
+          BUSHA_QUOTE_CURRENCY: "USD"
