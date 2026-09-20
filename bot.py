@@ -1,10 +1,6 @@
-import hashlib
-import hmac
 import json
 import os
 import time
-from urllib.parse import urlencode
-
 import requests
 from groq import Groq
 
@@ -21,9 +17,6 @@ LIVE_TRADING = (
     and os.getenv("ENABLE_LIVE_TRADING", "") == "I_UNDERSTAND"
 )
 
-BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
-BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
-BINANCE_BASE = os.getenv("BINANCE_BASE", "https://api.binance.com").rstrip("/")
 groq = Groq(api_key=os.environ["GROQ_API_KEY"])
 
 
@@ -157,26 +150,24 @@ Signal:
     return json.loads(response.choices[0].message.content.strip())
 
 
-def signed_request(method, path, params=None):
-    if not BINANCE_API_KEY or not BINANCE_API_SECRET:
-        raise RuntimeError("BINANCE_API_KEY and BINANCE_API_SECRET are required.")
-    params = dict(params or {})
-    params["timestamp"] = int(time.time() * 1000)
-    query = urlencode(params, doseq=True)
-    signature = hmac.new(
-        BINANCE_API_SECRET.encode(), query.encode(), hashlib.sha256
-    ).hexdigest()
-    headers = {"X-MBX-APIKEY": BINANCE_API_KEY}
-    response = requests.request(
-        method,
-        f"{BINANCE_BASE}{path}?{query}&signature={signature}",
-        headers=headers,
+def busha_pairs():
+    """Read Busha's public pair data for supported assets/rates."""
+    r = requests.get(
+        "https://api.busha.co/v1/pairs",
+        params={"currency": "NGN", "type": "crypto"},
+        headers={"User-Agent": "Veylola-Trade/1.0"},
         timeout=15,
     )
-    response.raise_for_status()
-    return response.json()
+    r.raise_for_status()
+    return r.json()
 
 
+def execute(action, price):
+    if QUOTE_AMOUNT <= 0 or QUOTE_AMOUNT > MAX_POSITION_USDT:
+        return "blocked: position limit"
+    if not LIVE_TRADING:
+        return f"PAPER {action} @ {price:.2f} (Busha connected; no real order sent)"
+    return "LIVE execution blocked: Busha production trading requires an approved Busha Business API integration and explicit transaction flow."
 def execute(action, price):
     if QUOTE_AMOUNT <= 0 or QUOTE_AMOUNT > MAX_POSITION_USDT:
         return "blocked: position limit"
