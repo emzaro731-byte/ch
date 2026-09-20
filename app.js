@@ -27,4 +27,4 @@ $("#pair").onchange=e=>{const v=e.target.value;$("#settingsPair").value=v;$("#me
 $("#themeBtn").onclick=()=>document.body.classList.toggle("light");
 sb.auth.onAuthStateChange(async(_event,session)=>{showUser(session?.user||null);if(session?.user){await loadSettings();await loadStatus()}});
 (async()=>{const {data}=await sb.auth.getSession();showUser(data.session?.user||null);if(data.session?.user){await loadSettings();await loadStatus()}else{render()}})();
-user&&sb.channel("trading-web-sync").on("postgres_changes",{event:"UPDATE",schema:"public",table:"trading_bot_settings",filter:"user_id=eq."+user.id},loadSettings).subscribe();
+user&&
