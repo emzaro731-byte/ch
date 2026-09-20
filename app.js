@@ -38,23 +38,23 @@ async function terminalBook(){try{const p=$("#terminalPairSelect").value==="BTCU
 const oldRender=render;render=function(){oldRender();if($("#tPrice")){$("#tPrice").textContent=money(price);$("#tHigh").textContent=money(price*1.012);$("#tLow").textContent=money(price*.988);$("#terminalPair").textContent=pairName($("#terminalPairSelect")?.value||"BTCUSDT");const a=Number($("#terminalAmount")?.value)||0;$("#terminalTotal").textContent=money(a*price);drawTerminal()}};
 $("#terminalPairSelect").onchange=()=>{if($("#pair"))$("#pair").value=$("#terminalPairSelect").value;points=[];loadMarket();terminalBook()};$("#terminalAmount").oninput=render;$("#terminalBuy").onclick=()=>{terminalSide="BUY";$("#terminalBuy").classList.add("active");$("#terminalSell").classList.remove("active");$("#terminalOrder").textContent="Buy "+($("#terminalPairSelect").value||"BTCUSDT").replace("USDT","")};$("#terminalSell").onclick=()=>{terminalSide="SELL";$("#terminalSell").classList.add("active");$("#terminalBuy").classList.remove("active");$("#terminalOrder").textContent="Sell "+($("#terminalPairSelect").value||"BTCUSDT").replace("USDT","")};$("#terminalOrder").onclick=()=>{if(!user){alert("Sign in first.");return}event("PAPER",terminalSide+" order simulated");alert("Paper order recorded. Live execution is disabled.");};$("#terminalAnalyze").onclick=runAnalysis;setInterval(()=>{if(user)terminalBook()},15000);window.addEventListener("resize",drawTerminal);
 
-/* Athena-style bot controls. These controls are dashboard state only; real execution stays server-side. */
+/* Veylola Trade-style bot controls. These controls are dashboard state only; real execution stays server-side. */
 const athena={state:"running",runs:0,trades:0,pnl:0};
-function setAthenaState(next){
+function setVeylola TradeState(next){
   athena.state=next;
   const box=$("#athenaStatus");
   box.className="bot-status "+next;
   $("#athenaStatusText").textContent=next==="running"?"Running":next==="paused"?"Paused":"Stopped";
   $("#athenaStatusDetail").textContent=next==="running"?"AI strategy monitoring":next==="paused"?"Waiting for resume":"Bot is offline";
   $("#botState").textContent=next==="running"?"RUNNING":next==="paused"?"PAUSED":"STOPPED";
-  $("#botStateDetail").textContent="Athena control state";
-  event("BOT", "Athena "+next);
+  $("#botStateDetail").textContent="Veylola Trade control state";
+  event("BOT", "Veylola Trade "+next);
 }
 $("#athenaStart").onclick=async()=>{
   athena.runs++;
   $("#athenaRuns").textContent=athena.runs;
-  setAthenaState("running");
+  setVeylola TradeState("running");
   if(user) await runAnalysis();
 };
-$("#athenaPause").onclick=()=>setAthenaState("paused");
-$("#athenaStop").onclick=()=>setAthenaState("stopped");
+$("#athenaPause").onclick=()=>setVeylola TradeState("paused");
+$("#athenaStop").onclick=()=>setVeylola TradeState("stopped");
