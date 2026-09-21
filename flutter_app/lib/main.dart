@@ -143,7 +143,72 @@ class _BybitConnectState extends State<BybitConnect>{
  Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Connect Bybit')),body:ListView(padding:const EdgeInsets.all(20),children:[const Text('Connect your Bybit account',style:TextStyle(fontSize:24,fontWeight:FontWeight.w800)),const SizedBox(height:8),const Text('Use a Bybit API key. The secret is sent to the secure backend and is not stored in the Flutter app.',style:TextStyle(color:Colors.white70)),const SizedBox(height:18),TextField(controller:k,decoration:const InputDecoration(labelText:'Bybit API key',border:OutlineInputBorder())),const SizedBox(height:12),TextField(controller:s,obscureText:true,decoration:const InputDecoration(labelText:'Bybit API secret',border:OutlineInputBorder())),const SizedBox(height:16),FilledButton(onPressed:busy?null:save,child:Text(busy?'Connecting…':'Connect account')),if(msg.isNotEmpty)Padding(padding:const EdgeInsets.only(top:12),child:Text(msg,style:const TextStyle(color:Colors.redAccent))) ]));
 }
 class BybitOrders extends StatefulWidget{const BybitOrders({super.key});State<BybitOrders>createState()=>_BybitOrdersState();}
-class _BybitOrdersState extends State<BybitOrders>{List<dynamic> rows=[];bool loading=true;String msg='';initState(){super.initState();load();}Future<void>load()async{try{rows=await BybitSecure.orders();if(mounted)setState(()=>msg='');}catch(e){if(mounted)setState(()=>msg=e.toString().replaceFirst('Exception: ',''));}finally{if(mounted)setState(()=>loading=false);}}Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Order history')),body:RefreshIndicator(onRefresh:load,child:ListView(padding:const EdgeInsets.all(16),children:[if(loading)const LinearProgressIndicator(),if(msg.isNotEmpty)Card(child:Padding(padding:const EdgeInsets.all(16),child:Text(msg))),if(!loading&&rows.isEmpty)const Card(child:ListTile(title:Text('No orders'),subtitle:Text('Your Bybit spot order history will appear here.'))),...rows.map((x){final m=Map<String,dynamic>.from(x as Map);return Card(child:ListTile(title:Text((m['symbol']??'—').toString()),subtitle:Text((m['side']??'') .toString()+' • '+(m['orderType']??'').toString()+' • '+(m['orderStatus']??'').toString()),trailing:Text(m['qty']?.toString()??'—'));})])));}
+class _BybitOrdersState extends State<BybitOrders> {
+  List<dynamic> rows = [];
+  bool loading = true;
+  String msg = '';
+
+  @override
+  void initState() {
+    super.initState();
+    load();
+  }
+
+  Future<void> load() async {
+    try {
+      rows = await BybitSecure.orders();
+      if (mounted) {
+        setState(() { msg = ''; });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() { msg = e.toString().replaceFirst('Exception: ', ''); });
+      }
+    } finally {
+      if (mounted) {
+        setState(() { loading = false; });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Order history')),
+      body: RefreshIndicator(
+        onRefresh: load,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            if (loading) const LinearProgressIndicator(),
+            if (msg.isNotEmpty)
+              Card(child: Padding(padding: const EdgeInsets.all(16), child: Text(msg))),
+            if (!loading && rows.isEmpty)
+              const Card(
+                child: ListTile(
+                  title: Text('No orders'),
+                  subtitle: Text('Your Bybit spot order history will appear here.'),
+                ),
+              ),
+            ...rows.map((x) {
+              final m = Map<String, dynamic>.from(x as Map);
+              final details = (m['side'] ?? '').toString() + ' • ' +
+                  (m['orderType'] ?? '').toString() + ' • ' +
+                  (m['orderStatus'] ?? '').toString();
+              return Card(
+                child: ListTile(
+                  title: Text((m['symbol'] ?? '—').toString()),
+                  subtitle: Text(details),
+                  trailing: Text(m['qty']?.toString() ?? '—'),
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+}
 class Home extends StatefulWidget{const Home({super.key});State<Home>createState()=>_HomeState();}
 class _HomeState extends State<Home>{final sy=['BTCUSDT','ETHUSDT','BNBUSDT','SOLUSDT'];final d=<String,Map<String,dynamic>>{};Timer? timer;
  initState(){super.initState();load();timer=Timer.periodic(const Duration(seconds:8),(_)=>load());}
