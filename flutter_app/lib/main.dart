@@ -6,7 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 const supabaseUrl='https://vihbsfrwnslnmheowkhy.supabase.co';
 const supabasePublishableKey='sb_publishable_HIMGxb-O6fj9O7OzT4ukuQ_jm5W8mWz';
-const bybit='https://api.bybit.com';
+const bushaBaseUrl='https://api.busha.co';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -105,120 +105,35 @@ class _ExchangeState extends State<Exchange>{int i=0;final pages=const[Home(),Ma
  NavigationDestination(icon:Icon(Icons.home_outlined),selectedIcon:Icon(Icons.home),label:'Home'),NavigationDestination(icon:Icon(Icons.show_chart),label:'Markets'),NavigationDestination(icon:Icon(Icons.swap_horiz),label:'Trade'),NavigationDestination(icon:Icon(Icons.candlestick_chart),label:'Futures'),NavigationDestination(icon:Icon(Icons.account_balance_wallet_outlined),label:'Assets')]));}
 
 class Api{
- static Future<dynamic> get(String path)async{
-  final cl=HttpClient();
-  try{
-   final res=await cl.getUrl(Uri.parse(bybit+path)).then((x)=>x.close());
-   final body=await res.transform(utf8.decoder).join();
-   if(res.statusCode!=200)throw Exception('Bybit HTTP '+res.statusCode.toString());
-   final data=jsonDecode(body);
-   if(data is Map && data['retCode']!=0)throw Exception('Bybit API '+data['retCode'].toString()+': '+data['retMsg'].toString());
-   return data is Map && data.containsKey('result') ? data['result'] : data;
-  }finally{cl.close(force:true);}
- }
- static Future<Map<String,dynamic>> ticker(String s)=>get('/v5/market/tickers?category=spot&symbol='+s).then((x){
-  final list=List<dynamic>.from((x as Map)['list'] as List);
-  return list.isEmpty?<String,dynamic>{}:Map<String,dynamic>.from(list.first);
- });
- static Future<List<dynamic>> all()=>get('/v5/market/tickers?category=spot').then((x)=>List<dynamic>.from((x as Map)['list'] as List));
- static String change(Map<String,dynamic> x)=>x['price24hPcnt']?.toString()??'—';
+ static Future<dynamic> get(String path)async{final cl=HttpClient();try{final res=await cl.getUrl(Uri.parse(bushaBaseUrl+path)).then((x)=>x.close());final body=await res.transform(utf8.decoder).join();if(res.statusCode!=200)throw Exception('Busha HTTP '+res.statusCode.toString());final data=jsonDecode(body);if(data is Map&&data['status']=='error')throw Exception(data['message']?.toString()??'Busha API error');return data is Map&&data.containsKey('data')?data['data']:data;}finally{cl.close(force:true);}}
+ static Future<List<dynamic>> pairs()=>get('/v1/pairs').then((x)=>List<dynamic>.from(x as List));
+ static Future<Map<String,dynamic>> pair(String s)=>pairs().then((list){final hit=list.cast<dynamic>().firstWhere((x)=>x is Map&&x['id'].toString().toUpperCase()==s.toUpperCase(),orElse:()=>null);return hit==null?<String,dynamic>{}:Map<String,dynamic>.from(hit as Map);});
+ static String change(Map<String,dynamic> x){final buy=x['buy_price'] is Map?x['buy_price']['amount']?.toString():null;final sell=x['sell_price'] is Map?x['sell_price']['amount']?.toString():null;return buy!=null&&sell!=null?'Buy '+buy+' • Sell '+sell:'—';}
 }
-
-class BybitSecure {
- static Future<dynamic> call(String action,{Map<String,dynamic> data=const{}}) async {
-  final r=await supabase.functions.invoke('bybit',body:{'action':action,...data});
-  final d=r.data;
-  if(d is Map && d['error']!=null) throw Exception(d['error'].toString());
-  return d;
- }
- static Future<void> connect(String key,String secret)=>call('connect',data:{'apiKey':key,'apiSecret':secret});
- static Future<Map<String,dynamic>> balance()=>call('balance').then((x)=>Map<String,dynamic>.from(x as Map));
- static Future<List<dynamic>> orders()=>call('orders').then((x)=>List<dynamic>.from((x as Map)['list'] as List));
- static Future<dynamic> order({required String symbol,required String side,required String type,required String qty,String? price})=>call('order',data:{'symbol':symbol,'side':side,'orderType':type,'qty':qty,if(price!=null)'price':price});
-}
-class BybitConnect extends StatefulWidget{const BybitConnect({super.key});State<BybitConnect>createState()=>_BybitConnectState();}
-class _BybitConnectState extends State<BybitConnect>{
- final k=TextEditingController(),s=TextEditingController();bool busy=false;String msg='';
- Future<void> save() async {if(k.text.trim().isEmpty||s.text.trim().isEmpty){setState(()=>msg='Enter both your Bybit API key and API secret.');return;}setState(()=>busy=true);try{await BybitSecure.connect(k.text.trim(),s.text.trim());if(mounted)Navigator.pop(context,true);}catch(e){if(mounted)setState(()=>msg=e.toString().replaceFirst('Exception: ',''));}finally{if(mounted)setState(()=>busy=false);}}
- Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Connect Bybit')),body:ListView(padding:const EdgeInsets.all(20),children:[const Text('Connect your Bybit account',style:TextStyle(fontSize:24,fontWeight:FontWeight.w800)),const SizedBox(height:8),const Text('Use a Bybit API key. The secret is sent to the secure backend and is not stored in the Flutter app.',style:TextStyle(color:Colors.white70)),const SizedBox(height:18),TextField(controller:k,decoration:const InputDecoration(labelText:'Bybit API key',border:OutlineInputBorder())),const SizedBox(height:12),TextField(controller:s,obscureText:true,decoration:const InputDecoration(labelText:'Bybit API secret',border:OutlineInputBorder())),const SizedBox(height:16),FilledButton(onPressed:busy?null:save,child:Text(busy?'Connecting…':'Connect account')),if(msg.isNotEmpty)Padding(padding:const EdgeInsets.only(top:12),child:Text(msg,style:const TextStyle(color:Colors.redAccent))) ]));
-}
-class BybitOrders extends StatefulWidget{const BybitOrders({super.key});State<BybitOrders>createState()=>_BybitOrdersState();}
-class _BybitOrdersState extends State<BybitOrders> {
-  List<dynamic> rows = [];
-  bool loading = true;
-  String msg = '';
-
-  @override
-  void initState() {
-    super.initState();
-    load();
-  }
-
-  Future<void> load() async {
-    try {
-      rows = await BybitSecure.orders();
-      if (mounted) {
-        setState(() { msg = ''; });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() { msg = e.toString().replaceFirst('Exception: ', ''); });
-      }
-    } finally {
-      if (mounted) {
-        setState(() { loading = false; });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Order history')),
-      body: RefreshIndicator(
-        onRefresh: load,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            if (loading) const LinearProgressIndicator(),
-            if (msg.isNotEmpty)
-              Card(child: Padding(padding: const EdgeInsets.all(16), child: Text(msg))),
-            if (!loading && rows.isEmpty)
-              const Card(
-                child: ListTile(
-                  title: Text('No orders'),
-                  subtitle: Text('Your Bybit spot order history will appear here.'),
-                ),
-              ),
-            ...rows.map((x) {
-              final m = Map<String, dynamic>.from(x as Map);
-              final details = (m['side'] ?? '').toString() + ' • ' +
-                  (m['orderType'] ?? '').toString() + ' • ' +
-                  (m['orderStatus'] ?? '').toString();
-              return Card(
-                child: ListTile(
-                  title: Text((m['symbol'] ?? '—').toString()),
-                  subtitle: Text(details),
-                  trailing: Text(m['qty']?.toString() ?? '—'),
-                ),
-              );
-            }),
-          ],
-        ),
-      ),
-    );
-  }
-}
+class BushaSecure{
+ static Future<dynamic> call(String action,{Map<String,dynamic> data=const{}})async{final r=await supabase.functions.invoke('busha',body:{'action':action,...data});final d=r.data;if(d is Map&&d['error']!=null)throw Exception(d['error'].toString());return d;}
+ static Future<void> connect(String secret)=>call('connect',data:{'secretApiKey':secret});
+ static Future<List<dynamic>> balances()=>call('balances').then((x)=>List<dynamic>.from(x as List));
+ static Future<List<dynamic>> transfers()=>call('transfers').then((x)=>List<dynamic>.from(x as List));
+ static Future<Map<String,dynamic>> quote({required String source,required String target,required String amount})=>call('quote',data:{'sourceCurrency':source,'targetCurrency':target,'sourceAmount':amount}).then((x)=>Map<String,dynamic>.from(x as Map));
+ static Future<dynamic> execute(String quoteId)=>call('execute',data:{'quoteId':quoteId});
+}class BushaConnect extends StatefulWidget{const BushaConnect({super.key});State<BushaConnect>createState()=>_BushaConnectState();}
+class _BushaConnectState extends State<BushaConnect>{
+ final s=TextEditingController();bool busy=false;String msg='';
+ Future<void> save()async{if(s.text.trim().isEmpty){setState(()=>msg='Enter your Busha Secret API key.');return;}setState(()=>busy=true);try{await BushaSecure.connect(s.text.trim());if(mounted)Navigator.pop(context,true);}catch(e){if(mounted)setState(()=>msg=e.toString().replaceFirst('Exception: ',''));}finally{if(mounted)setState(()=>busy=false);}}
+ Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Connect Busha')),body:ListView(padding:const EdgeInsets.all(20),children:[const Text('Connect your Busha Business account',style:TextStyle(fontSize:24,fontWeight:FontWeight.w800)),const SizedBox(height:8),const Text('Use a Busha Secret API key. It stays on the secure backend and is encrypted at rest.',style:TextStyle(color:Colors.white70)),const SizedBox(height:18),TextField(controller:s,obscureText:true,decoration:const InputDecoration(labelText:'Busha Secret API key',border:OutlineInputBorder())),const SizedBox(height:16),FilledButton(onPressed:busy?null:save,child:Text(busy?'Connecting…':'Connect account')),if(msg.isNotEmpty)Padding(padding:const EdgeInsets.only(top:12),child:Text(msg,style:const TextStyle(color:Colors.redAccent)))]));
+}class BushaTransfers extends StatefulWidget{const BushaTransfers({super.key});State<BushaTransfers>createState()=>_BushaTransfersState();}
+class _BushaTransfersState extends State<BushaTransfers>{List<dynamic> rows=[];bool loading=true;String msg='';initState(){super.initState();load();}Future<void>load()async{try{rows=await BushaSecure.transfers();if(mounted)setState(()=>msg='');}catch(e){if(mounted)setState(()=>msg=e.toString().replaceFirst('Exception: ',''));}finally{if(mounted)setState(()=>loading=false);}}Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Transaction history')),body:RefreshIndicator(onRefresh:load,child:ListView(padding:const EdgeInsets.all(16),children:[if(loading)const LinearProgressIndicator(),if(msg.isNotEmpty)Card(child:Padding(padding:const EdgeInsets.all(16),child:Text(msg))),if(!loading&&rows.isEmpty)const Card(child:ListTile(title:Text('No transactions'),subtitle:Text('Your Busha transfer history will appear here.'))),...rows.map((x){final m=Map<String,dynamic>.from(x as Map);return Card(child:ListTile(title:Text((m['source_currency']??'—').toString()+' → '+(m['target_currency']??'—').toString()),subtitle:Text((m['status']??'—').toString()),trailing:Text(m['source_amount']?.toString()??'—')));})])));}
 class Home extends StatefulWidget{const Home({super.key});State<Home>createState()=>_HomeState();}
-class _HomeState extends State<Home>{final sy=['BTCUSDT','ETHUSDT','BNBUSDT','SOLUSDT'];final d=<String,Map<String,dynamic>>{};Timer? timer;
+class _HomeState extends State<Home>{final sy=['BTCUSDT','ETHUSDT','BTCNGN','ETHNGN'];final d=<String,Map<String,dynamic>>{};Timer? timer;
  initState(){super.initState();load();timer=Timer.periodic(const Duration(seconds:8),(_)=>load());}
- Future<void>load()async{try{for(final s in sy)d[s]=await Api.ticker(s);if(mounted)setState((){});}catch(_){}}void dispose(){timer?.cancel();super.dispose();}
+ Future<void>load()async{try{for(final s in sy)d[s]=await Api.pair(s);if(mounted)setState((){});}catch(_){}}void dispose(){timer?.cancel();super.dispose();}
  Widget build(BuildContext c)=>SafeArea(child:RefreshIndicator(onRefresh:load,child:ListView(padding:const EdgeInsets.all(16),children:[
  Row(children:[const CircleAvatar(backgroundColor:Color(0xfff0b90b),child:Icon(Icons.currency_bitcoin,color:Colors.black)),const SizedBox(width:10),const Expanded(child:Text('Veylola',style:TextStyle(fontSize:23,fontWeight:FontWeight.w800))),IconButton(onPressed:()=>supabase.auth.signOut(),icon:const Icon(Icons.logout))]),
  const SizedBox(height:16),TextField(decoration:InputDecoration(hintText:'Search coins, pairs and features',prefixIcon:const Icon(Icons.search),filled:true,fillColor:const Color(0xff181a20),border:OutlineInputBorder(borderSide:BorderSide.none,borderRadius:BorderRadius.circular(14)))),
- const SizedBox(height:18),const Text('Estimated balance',style:TextStyle(color:Colors.white60)),const Text('10,000.00 USDT',style:TextStyle(fontSize:30,fontWeight:FontWeight.w800)),const Text('Paper account • real-money trading disabled',style:TextStyle(color:Colors.white54)),
+ const SizedBox(height:18),const Text('Busha account',style:TextStyle(color:Colors.white60)),const Text('Live balances available in Assets',style:TextStyle(fontSize:22,fontWeight:FontWeight.w800)),const Text('Connected Busha Business account',style:TextStyle(color:Colors.white54)),
  const SizedBox(height:18),Row(children:[Q(Icons.add,'Deposit'),Q(Icons.send,'Withdraw'),Q(Icons.swap_horiz,'Convert'),Q(Icons.qr_code,'Pay')]),const SizedBox(height:22),const Text('Markets',style:TextStyle(fontSize:20,fontWeight:FontWeight.w800)),const SizedBox(height:8),
- ...sy.map((s)=>Tile(symbol:s,price:d[s]?['lastPrice']?.toString()??'—',change:d[s]==null?'—':Api.change(d[s]!))),
+ ...sy.map((s)=>Tile(symbol:s,price:d[s]?['buy_price']?['amount']?.toString()??'—',change:d[s]==null?'—':Api.change(d[s]!))),
  const SizedBox(height:10),Feature('Earn','Savings, staking and yield products',Icons.savings_outlined),Feature('P2P','Buy and sell with local payment methods',Icons.people_outline),Feature('Copy Trading','Track strategies and paper-test them',Icons.copy_all_outlined)
  ])));
 }
@@ -228,18 +143,10 @@ class Feature extends StatelessWidget{final String a,b;final IconData i;const Fe
 
 class Markets extends StatefulWidget{const Markets({super.key});State<Markets>createState()=>_MarketsState();}
 class _MarketsState extends State<Markets>{List<dynamic> rows=[];String q='';bool loading=true;initState(){super.initState();load();}
- Future<void>load()async{try{final a=await Api.all();rows=a.where((x){final s=x['symbol'].toString();return s.endsWith('USDT')&&['BTC','ETH','BNB','SOL','XRP','DOGE','ADA','TRX','AVAX','LINK'].any((p)=>s.startsWith(p));}).toList();}catch(_){}if(mounted)setState(()=>loading=false);}
- Widget build(BuildContext c)=>SafeArea(child:RefreshIndicator(onRefresh:load,child:ListView(padding:const EdgeInsets.all(16),children:[const Text('Markets',style:TextStyle(fontSize:28,fontWeight:FontWeight.w800)),const SizedBox(height:12),TextField(onChanged:(x)=>setState(()=>q=x.toUpperCase()),decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'Search pair',border:OutlineInputBorder())),const SizedBox(height:12),const Row(children:[Expanded(child:Text('Favorites',textAlign:TextAlign.center)),Expanded(child:Text('Spot',textAlign:TextAlign.center)),Expanded(child:Text('Futures',textAlign:TextAlign.center)),Expanded(child:Text('New',textAlign:TextAlign.center))]),const SizedBox(height:10),if(loading)const LinearProgressIndicator(),...rows.where((x)=>x['symbol'].toString().contains(q)).map((x)=>Tile(symbol:x['symbol'].toString(),price:x['lastPrice'].toString(),change:Api.change(Map<String,dynamic>.from(x as Map))))])));}
+ Future<void>load()async{try{final a=await Api.pairs();rows=a.where((x){final s=x['id'].toString();return s.endsWith('USDT')||s.endsWith('NGN');}).toList();}catch(_){}if(mounted)setState(()=>loading=false);}
+ Widget build(BuildContext c)=>SafeArea(child:RefreshIndicator(onRefresh:load,child:ListView(padding:const EdgeInsets.all(16),children:[const Text('Markets',style:TextStyle(fontSize:28,fontWeight:FontWeight.w800)),const SizedBox(height:12),TextField(onChanged:(x)=>setState(()=>q=x.toUpperCase()),decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'Search pair',border:OutlineInputBorder())),const SizedBox(height:12),const Row(children:[Expanded(child:Text('Favorites',textAlign:TextAlign.center)),Expanded(child:Text('Spot',textAlign:TextAlign.center)),Expanded(child:Text('Futures',textAlign:TextAlign.center)),Expanded(child:Text('New',textAlign:TextAlign.center))]),const SizedBox(height:10),if(loading)const LinearProgressIndicator(),...rows.where((x)=>x['id'].toString().contains(q)).map((x)=>Tile(symbol:x['id'].toString(),price:x['buy_price']?['amount']?.toString()??'—',change:Api.change(Map<String,dynamic>.from(x as Map))))])));}
 class Trade extends StatefulWidget{const Trade({super.key});State<Trade>createState()=>_TradeState();}
-class _TradeState extends State<Trade>{String s='BTCUSDT',side='BUY',type='LIMIT';Map<String,dynamic>? t;final p=TextEditingController(),a=TextEditingController();String msg='Paper trading mode';initState(){super.initState();load();}Future<void>load()async{try{t=await Api.ticker(s);if(mounted)setState((){});}catch(_){}}Widget build(BuildContext c)=>SafeArea(child:ListView(padding:const EdgeInsets.all(16),children:[
- Row(children:[const Text('Trade',style:TextStyle(fontSize:28,fontWeight:FontWeight.w800)),const Spacer(),DropdownButton<String>(value:s,items:const['BTCUSDT','ETHUSDT','BNBUSDT','SOLUSDT'].map((x)=>DropdownMenuItem(value:x,child:Text(x))).toList(),onChanged:(x){if(x!=null){setState(()=>s=x);load();}})]),
- Card(child:ListTile(title:const Text('Last price'),trailing:Text(t?['lastPrice']?.toString()??'—',style:const TextStyle(fontSize:20,fontWeight:FontWeight.bold)))),const SizedBox(height:12),
- SegmentedButton<String>(segments:const[ButtonSegment(value:'BUY',label:Text('Buy')),ButtonSegment(value:'SELL',label:Text('Sell'))],selected:{side},onSelectionChanged:(x)=>setState(()=>side=x.first)),const SizedBox(height:12),
- DropdownButtonFormField<String>(value:type,decoration:const InputDecoration(labelText:'Order type',border:OutlineInputBorder()),items:const['LIMIT','MARKET','STOP-LIMIT'].map((x)=>DropdownMenuItem(value:x,child:Text(x))).toList(),onChanged:(x){if(x!=null)setState(()=>type=x);}),const SizedBox(height:12),
- TextField(controller:p,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:InputDecoration(labelText:type=='MARKET'?'Market price':'Price (USDT)',border:const OutlineInputBorder())),const SizedBox(height:12),
- TextField(controller:a,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Amount',border:OutlineInputBorder())),const SizedBox(height:16),
- FilledButton(onPressed:()async{if(a.text.trim().isEmpty){setState(()=>msg='Enter an amount.');return;}try{await BybitSecure.order(symbol:s,side:side,type:type=='LIMIT'?'LIMIT':'MARKET',qty:a.text.trim(),price:type=='LIMIT'?p.text.trim():null);setState(()=>msg='Bybit '+side+' order submitted.');}catch(e){setState(()=>msg='Order failed: '+e.toString().replaceFirst('Exception: ',''));}},child:Text('Place '+side+' order')),const SizedBox(height:12),Card(child:Padding(padding:const EdgeInsets.all(14),child:Text(msg))),const SizedBox(height:18),const Text('Open orders',style:TextStyle(fontSize:20,fontWeight:FontWeight.bold)),const Card(child:ListTile(title:Text('No open orders'),subtitle:Text('Real execution is disabled')))
- ]));}
+class _TradeState extends State<Trade>{String s='BTCUSDT',side='BUY';Map<String,dynamic>? t;final a=TextEditingController();String msg='Get a quote before confirming a trade.';bool busy=false;initState(){super.initState();load();}Future<void>load()async{try{t=await Api.pair(s);if(mounted)setState((){});}catch(_){}}Future<void>trade()async{if(a.text.trim().isEmpty){setState(()=>msg='Enter an amount.');return;}if(t==null||t!.isEmpty){setState(()=>msg='Market pair unavailable.');return;}final source=side=='BUY'?t!['counter'].toString():t!['base'].toString();final target=side=='BUY'?t!['base'].toString():t!['counter'].toString();setState(()=>busy=true);try{final q=await BushaSecure.quote(source:source,target:target,amount:a.text.trim());final id=q['id']?.toString()??'';if(id.isEmpty)throw Exception('No Busha quote ID returned.');if(!mounted)return;final ok=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:Text('Confirm $side trade'),content:Text(source+' '+a.text.trim()+' → '+target+' '+(q['target_amount']??'—').toString()),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Confirm'))]))??false;if(!ok){setState(()=>msg='Trade cancelled.');return;}await BushaSecure.execute(id);setState(()=>msg='Busha trade submitted successfully.');}catch(e){setState(()=>msg='Trade failed: '+e.toString().replaceFirst('Exception: ',''));}finally{if(mounted)setState(()=>busy=false);}}Widget build(BuildContext c)=>SafeArea(child:ListView(padding:const EdgeInsets.all(16),children:[Row(children:[const Text('Trade',style:TextStyle(fontSize:28,fontWeight:FontWeight.w800)),const Spacer(),DropdownButton<String>(value:s,items:const['BTCUSDT','ETHUSDT','BTCNGN','ETHNGN'].map((x)=>DropdownMenuItem(value:x,child:Text(x))).toList(),onChanged:(x){if(x!=null){setState(()=>s=x);load();}})]),Card(child:ListTile(title:const Text('Buy price'),trailing:Text(t?['buy_price']?['amount']?.toString()??'—'))),Card(child:ListTile(title:const Text('Sell price'),trailing:Text(t?['sell_price']?['amount']?.toString()??'—'))),const SizedBox(height:12),SegmentedButton<String>(segments:const[ButtonSegment(value:'BUY',label:Text('Buy')),ButtonSegment(value:'SELL',label:Text('Sell'))],selected:{side},onSelectionChanged:(x)=>setState(()=>side=x.first)),const SizedBox(height:12),TextField(controller:a,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:InputDecoration(labelText:side=='BUY'?'Amount in '+(t?['counter']??'quote').toString():'Amount in '+(t?['base']??'base').toString(),border:const OutlineInputBorder())),const SizedBox(height:16),FilledButton(onPressed:busy?null:trade,child:Text(busy?'Processing…':'Get quote & trade')),const SizedBox(height:12),Card(child:Padding(padding:const EdgeInsets.all(14),child:Text(msg)))]));}
 
 class Futures extends StatelessWidget {
   const Futures({super.key});
@@ -250,7 +157,7 @@ class Futures extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       children: [
         const Text('Futures', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800)),
-        const Text('Perpetual futures workspace'),
+        const Text('Busha spot trading workspace'),
         const SizedBox(height: 18),
         Card(
           child: Padding(
@@ -260,7 +167,7 @@ class Futures extends StatelessWidget {
               children: [
                 const Text('BTCUSDT Perpetual', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 12),
-                const Text('1x leverage • USDT margin • Paper mode'),
+                const Text('Futures are disabled in this Busha integration.'),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -282,7 +189,6 @@ class Futures extends StatelessWidget {
   );
 }
 
-class Assets extends StatefulWidget{const Assets({super.key});State<Assets>createState()=>_AssetsState();}
-class _AssetsState extends State<Assets>{Map<String,dynamic>? data;bool loading=true;String msg='';initState(){super.initState();load();}Future<void>load()async{try{data=await BybitSecure.balance();if(mounted)setState(()=>msg='');}catch(e){if(mounted)setState(()=>msg=e.toString().replaceFirst('Exception: ',''));}finally{if(mounted)setState(()=>loading=false);}}Widget build(BuildContext c){final list=data==null?const[]:List<dynamic>.from(data!['list']??const[]);final account=list.isEmpty?null:Map<String,dynamic>.from(list.first as Map);final coins=account==null?const[]:List<dynamic>.from(account['coin']??const[]);final equity=account==null?'—':(account['totalEquity']?.toString()??'—');return SafeArea(child:RefreshIndicator(onRefresh:load,child:ListView(padding:const EdgeInsets.all(16),children:[const Text('Assets',style:TextStyle(fontSize:28,fontWeight:FontWeight.w800)),const SizedBox(height:8),const Text('Bybit Unified account',style:TextStyle(color:Colors.white60)),Text(equity,style:const TextStyle(fontSize:30,fontWeight:FontWeight.w800)),const SizedBox(height:14),Row(children:[Expanded(child:FilledButton(onPressed:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const BybitConnect())).then((_){load();}),child:const Text('Connect / reconnect'))),const SizedBox(width:10),Expanded(child:OutlinedButton(onPressed:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const BybitOrders())),child:const Text('Order history')))]),const SizedBox(height:12),if(msg.isNotEmpty)Card(child:Padding(padding:const EdgeInsets.all(14),child:Text(msg))),if(loading)const LinearProgressIndicator(),const SizedBox(height:12),const Text('Wallets',style:TextStyle(fontSize:20,fontWeight:FontWeight.bold)),const SizedBox(height:8),if(coins.isEmpty&&!loading)const Card(child:ListTile(title:Text('No wallet data'),subtitle:Text('Connect your Bybit account to load balances.'))),...coins.map((x){final m=Map<String,dynamic>.from(x as Map);return Bal(m['coin']?.toString()??'—',m['walletBalance']?.toString()??'0',m['usdValue']?.toString()??'0 USD');})])));}}
+class Assets extends StatefulWidget{const Assets({super.key});State<Assets>createState()=>_AssetsState();}class _AssetsState extends State<Assets>{List<dynamic> data=[];bool loading=true;String msg='';initState(){super.initState();load();}Future<void>load()async{try{data=await BushaSecure.balances();if(mounted)setState(()=>msg='');}catch(e){if(mounted)setState(()=>msg=e.toString().replaceFirst('Exception: ',''));}finally{if(mounted)setState(()=>loading=false);}}Widget build(BuildContext c)=>SafeArea(child:RefreshIndicator(onRefresh:load,child:ListView(padding:const EdgeInsets.all(16),children:[const Text('Assets',style:TextStyle(fontSize:28,fontWeight:FontWeight.w800)),const SizedBox(height:8),const Text('Busha Business balances',style:TextStyle(color:Colors.white60)),const SizedBox(height:14),Row(children:[Expanded(child:FilledButton(onPressed:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const BushaConnect())).then((_){load();}),child:const Text('Connect / reconnect'))),const SizedBox(width:10),Expanded(child:OutlinedButton(onPressed:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const BushaTransfers())),child:const Text('Transaction history')))]),const SizedBox(height:12),if(msg.isNotEmpty)Card(child:Padding(padding:const EdgeInsets.all(14),child:Text(msg))),if(loading)const LinearProgressIndicator(),const SizedBox(height:12),const Text('Wallets',style:TextStyle(fontSize:20,fontWeight:FontWeight.bold)),const SizedBox(height:8),if(data.isEmpty&&!loading)const Card(child:ListTile(title:Text('No wallet data'),subtitle:Text('Connect your Busha Business account to load balances.'))),...data.map((x){final m=Map<String,dynamic>.from(x as Map);final amount=m['available'] is Map?m['available']['amount']?.toString()??'0':'0';return Bal(m['currency']?.toString()??'—',amount,m['type']?.toString()??'');})])));} 
 
-class Bal extends StatelessWidget{final String c,a,v;const Bal(this.c,this.a,this.v,{super.key});Widget build(BuildContext x)=>Card(child:ListTile(leading:CircleAvatar(backgroundColor:const Color(0xff2b2f36),child:Text(c[0])),title:Text(c,style:const TextStyle(fontWeight:FontWeight.bold)),subtitle:Text(v),trailing:Text(a)));}
+class Bal extends StatelessWidget{final String c,a,v;const Bal(this.c,this.a,this.v,{super.key});Widget build(BuildContext x)=>Card(child:ListTile(leading:CircleAvatar(backgroundColor:const Color(0xff2b2f36),child:Text(c.isEmpty?'?':c[0])),title:Text(c,style:const TextStyle(fontWeight:FontWeight.bold)),subtitle:Text(v),trailing:Text(a)));}
