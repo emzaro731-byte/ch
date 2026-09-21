@@ -8,14 +8,48 @@ const supabaseUrl='https://vihbsfrwnslnmheowkhy.supabase.co';
 const supabasePublishableKey='sb_publishable_HIMGxb-O6fj9O7OzT4ukuQ_jm5W8mWz';
 const binance='https://api.binance.com';
 
-Future<void> main() async { WidgetsFlutterBinding.ensureInitialized(); await Supabase.initialize(url:supabaseUrl,anonKey:supabasePublishableKey); runApp(const Veylola()); }
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  Object? initError;
+  try {
+    await Supabase.initialize(url: supabaseUrl, anonKey: supabasePublishableKey)
+        .timeout(const Duration(seconds: 20));
+  } catch (e) {
+    initError = e;
+  }
+  runApp(Veylola(initError: initError));
+}
 final supabase=Supabase.instance.client;
 
 class Veylola extends StatelessWidget {
- const Veylola({super.key});
+ final Object? initError;
+ const Veylola({super.key, this.initError});
  Widget build(BuildContext c)=>MaterialApp(title:'Veylola Trade',debugShowCheckedModeBanner:false,
   theme:ThemeData.dark(useMaterial3:true).copyWith(scaffoldBackgroundColor:const Color(0xff0b0e11),cardColor:const Color(0xff181a20),colorScheme:ColorScheme.fromSeed(seedColor:const Color(0xfff0b90b),brightness:Brightness.dark)),
-  home:const Gate());
+  home: initError == null ? const Gate() : StartupError(error: initError.toString()));
+}
+class StartupError extends StatelessWidget {
+  final String error;
+  const StartupError({super.key, required this.error});
+  Widget build(BuildContext context) => Scaffold(
+    body: SafeArea(child: Center(child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Icon(Icons.cloud_off, size: 64, color: Color(0xfff0b90b)),
+        const SizedBox(height: 16),
+        const Text('Connection problem', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 10),
+        const Text('Veylola Trade could not connect to Supabase. Check your internet connection and try again.', textAlign: TextAlign.center),
+        const SizedBox(height: 18),
+        FilledButton(onPressed: () => main(), child: const Text('Retry connection')),
+        const SizedBox(height: 12),
+        Text(error.contains('SocketException') || error.contains('Failed host lookup')
+          ? 'DNS/network lookup failed for the Supabase server.'
+          : 'Supabase initialization failed.',
+          textAlign: TextAlign.center, style: const TextStyle(color: Colors.white54)),
+      ]),
+    ))),
+  );
 }
 class Gate extends StatelessWidget {
  const Gate({super.key});
@@ -24,7 +58,42 @@ class Gate extends StatelessWidget {
 class Login extends StatefulWidget { const Login({super.key}); State<Login> createState()=>_LoginState(); }
 class _LoginState extends State<Login>{
  final e=TextEditingController(),p=TextEditingController(); bool busy=false; String msg='';
- Future<void> go(bool create)async{setState(()=>busy=true);try{if(create)await supabase.auth.signUp(email:e.text.trim(),password:p.text);else await supabase.auth.signInWithPassword(email:e.text.trim(),password:p.text);if(create&&mounted)setState(()=>msg='Account created. Check email if confirmation is enabled.');}catch(x){if(mounted)setState(()=>msg='Authentication failed: '+x.toString());}if(mounted)setState(()=>busy=false);}
+ Future<void> go(bool create) async {
+  final email = e.text.trim();
+  final password = p.text;
+  if (email.isEmpty || !email.contains('@')) {
+    setState(() => msg = 'Enter a valid email address.');
+    return;
+  }
+  if (password.length < 6) {
+    setState(() => msg = 'Password must be at least 6 characters.');
+    return;
+  }
+  setState(() { busy = true; msg = ''; });
+  try {
+    if (create) {
+      await supabase.auth.signUp(email: email, password: password)
+          .timeout(const Duration(seconds: 20));
+      if (mounted) setState(() => msg = 'Account created. Check your email if confirmation is enabled.');
+    } else {
+      await supabase.auth.signInWithPassword(email: email, password: password)
+          .timeout(const Duration(seconds: 20));
+    }
+  } on TimeoutException {
+    if (mounted) setState(() => msg = 'Connection timed out. Check your internet/DNS and try again.');
+  } on SocketException catch (x) {
+    if (mounted) setState(() => msg = 'Network/DNS error: ${x.message}. Make sure your phone can reach Supabase.');
+  } on AuthException catch (x) {
+    if (mounted) setState(() => msg = 'Authentication failed: ${x.message}');
+  } catch (x) {
+    final text = x.toString();
+    if (mounted) setState(() => msg = text.contains('Failed host lookup')
+        ? 'Cannot resolve the Supabase server. Check DNS/network and retry.'
+        : 'Authentication failed: $text');
+  } finally {
+    if (mounted) setState(() => busy = false);
+  }
+}
  Widget build(BuildContext c)=>Scaffold(body:SafeArea(child:Center(child:SingleChildScrollView(padding:const EdgeInsets.all(24),child:ConstrainedBox(constraints:const BoxConstraints(maxWidth:480),child:Column(children:[
  const Icon(Icons.currency_bitcoin,size:56,color:Color(0xfff0b90b)),const SizedBox(height:10),const Text('Veylola Trade',style:TextStyle(fontSize:34,fontWeight:FontWeight.w800)),const Text('Full crypto exchange workspace'),const SizedBox(height:28),
  TextField(controller:e,decoration:const InputDecoration(labelText:'Email',border:OutlineInputBorder())),const SizedBox(height:12),TextField(controller:p,obscureText:true,decoration:const InputDecoration(labelText:'Password',border:OutlineInputBorder())),const SizedBox(height:16),
