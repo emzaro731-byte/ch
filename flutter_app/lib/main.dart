@@ -16,7 +16,7 @@ Future<void> main() async {
   try {
     await Supabase.initialize(
       url: supabaseUrl,
-      anonKey: supabasePublishableKey,
+      publishableKey: supabasePublishableKey,
     ).timeout(const Duration(seconds: 20));
   } catch (e) {
     initError = e;
@@ -147,7 +147,11 @@ class _LoginState extends State<Login> {
     } on AuthException catch (x) {
       if (mounted) setState(() => msg = 'Authentication failed: ${x.message}');
     } catch (x) {
-      if (mounted) setState(() => msg = 'Authentication failed: $x');
+      final raw = x.toString();
+      final network = raw.contains('Failed host lookup') || raw.contains('SocketException') || raw.contains('No address associated with hostname');
+      if (mounted) setState(() => msg = network
+          ? 'Cannot reach the Supabase server. Check the Supabase Project URL/DNS and your internet connection.'
+          : 'Authentication failed: $x');
     } finally {
       if (mounted) setState(() => busy = false);
     }
