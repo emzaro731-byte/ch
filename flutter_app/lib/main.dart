@@ -6,7 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 const supabaseUrl='https://vihbsfrwnslnmheowkhy.supabase.co';
 const supabasePublishableKey='sb_publishable_HIMGxb-O6fj9O7OzT4ukuQ_jm5W8mWz';
-const binance='https://api.binance.com';
+const bybit='https://api.bybit.com';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -105,9 +105,23 @@ class _ExchangeState extends State<Exchange>{int i=0;final pages=const[Home(),Ma
  NavigationDestination(icon:Icon(Icons.home_outlined),selectedIcon:Icon(Icons.home),label:'Home'),NavigationDestination(icon:Icon(Icons.show_chart),label:'Markets'),NavigationDestination(icon:Icon(Icons.swap_horiz),label:'Trade'),NavigationDestination(icon:Icon(Icons.candlestick_chart),label:'Futures'),NavigationDestination(icon:Icon(Icons.account_balance_wallet_outlined),label:'Assets')]));}
 
 class Api{
- static Future<dynamic> get(String path)async{final cl=HttpClient();try{final res=await cl.getUrl(Uri.parse(binance+path)).then((x)=>x.close());final body=await res.transform(utf8.decoder).join();if(res.statusCode!=200)throw Exception('Binance HTTP '+res.statusCode.toString());return jsonDecode(body);}finally{cl.close(force:true);}}
- static Future<Map<String,dynamic>> ticker(String s)=>get('/api/v3/ticker/24hr?symbol='+s).then((x)=>Map<String,dynamic>.from(x));
- static Future<List<dynamic>> all()=>get('/api/v3/ticker/24hr').then((x)=>List<dynamic>.from(x as List));
+ static Future<dynamic> get(String path)async{
+  final cl=HttpClient();
+  try{
+   final res=await cl.getUrl(Uri.parse(bybit+path)).then((x)=>x.close());
+   final body=await res.transform(utf8.decoder).join();
+   if(res.statusCode!=200)throw Exception('Bybit HTTP '+res.statusCode.toString());
+   final data=jsonDecode(body);
+   if(data is Map && data['retCode']!=0)throw Exception('Bybit API '+data['retCode'].toString()+': '+data['retMsg'].toString());
+   return data is Map && data.containsKey('result') ? data['result'] : data;
+  }finally{cl.close(force:true);}
+ }
+ static Future<Map<String,dynamic>> ticker(String s)=>get('/v5/market/tickers?category=spot&symbol='+s).then((x){
+  final list=List<dynamic>.from((x as Map)['list'] as List);
+  return list.isEmpty?<String,dynamic>{}:Map<String,dynamic>.from(list.first);
+ });
+ static Future<List<dynamic>> all()=>get('/v5/market/tickers?category=spot').then((x)=>List<dynamic>.from((x as Map)['list'] as List));
+ static String change(Map<String,dynamic> x)=>x['price24hPcnt']?.toString()??'—';
 }
 
 class Home extends StatefulWidget{const Home({super.key});State<Home>createState()=>_HomeState();}
@@ -119,7 +133,7 @@ class _HomeState extends State<Home>{final sy=['BTCUSDT','ETHUSDT','BNBUSDT','SO
  const SizedBox(height:16),TextField(decoration:InputDecoration(hintText:'Search coins, pairs and features',prefixIcon:const Icon(Icons.search),filled:true,fillColor:const Color(0xff181a20),border:OutlineInputBorder(borderSide:BorderSide.none,borderRadius:BorderRadius.circular(14)))),
  const SizedBox(height:18),const Text('Estimated balance',style:TextStyle(color:Colors.white60)),const Text('10,000.00 USDT',style:TextStyle(fontSize:30,fontWeight:FontWeight.w800)),const Text('Paper account • real-money trading disabled',style:TextStyle(color:Colors.white54)),
  const SizedBox(height:18),Row(children:[Q(Icons.add,'Deposit'),Q(Icons.send,'Withdraw'),Q(Icons.swap_horiz,'Convert'),Q(Icons.qr_code,'Pay')]),const SizedBox(height:22),const Text('Markets',style:TextStyle(fontSize:20,fontWeight:FontWeight.w800)),const SizedBox(height:8),
- ...sy.map((s)=>Tile(symbol:s,price:d[s]?['lastPrice']?.toString()??'—',change:d[s]?['priceChangePercent']?.toString()??'—')),
+ ...sy.map((s)=>Tile(symbol:s,price:d[s]?['lastPrice']?.toString()??'—',change:d[s]==null?'—':Api.change(d[s]!))),
  const SizedBox(height:10),Feature('Earn','Savings, staking and yield products',Icons.savings_outlined),Feature('P2P','Buy and sell with local payment methods',Icons.people_outline),Feature('Copy Trading','Track strategies and paper-test them',Icons.copy_all_outlined)
  ])));
 }
@@ -130,7 +144,7 @@ class Feature extends StatelessWidget{final String a,b;final IconData i;const Fe
 class Markets extends StatefulWidget{const Markets({super.key});State<Markets>createState()=>_MarketsState();}
 class _MarketsState extends State<Markets>{List<dynamic> rows=[];String q='';bool loading=true;initState(){super.initState();load();}
  Future<void>load()async{try{final a=await Api.all();rows=a.where((x){final s=x['symbol'].toString();return s.endsWith('USDT')&&['BTC','ETH','BNB','SOL','XRP','DOGE','ADA','TRX','AVAX','LINK'].any((p)=>s.startsWith(p));}).toList();}catch(_){}if(mounted)setState(()=>loading=false);}
- Widget build(BuildContext c)=>SafeArea(child:RefreshIndicator(onRefresh:load,child:ListView(padding:const EdgeInsets.all(16),children:[const Text('Markets',style:TextStyle(fontSize:28,fontWeight:FontWeight.w800)),const SizedBox(height:12),TextField(onChanged:(x)=>setState(()=>q=x.toUpperCase()),decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'Search pair',border:OutlineInputBorder())),const SizedBox(height:12),const Row(children:[Expanded(child:Text('Favorites',textAlign:TextAlign.center)),Expanded(child:Text('Spot',textAlign:TextAlign.center)),Expanded(child:Text('Futures',textAlign:TextAlign.center)),Expanded(child:Text('New',textAlign:TextAlign.center))]),const SizedBox(height:10),if(loading)const LinearProgressIndicator(),...rows.where((x)=>x['symbol'].toString().contains(q)).map((x)=>Tile(symbol:x['symbol'].toString(),price:x['lastPrice'].toString(),change:x['priceChangePercent'].toString()))])));}
+ Widget build(BuildContext c)=>SafeArea(child:RefreshIndicator(onRefresh:load,child:ListView(padding:const EdgeInsets.all(16),children:[const Text('Markets',style:TextStyle(fontSize:28,fontWeight:FontWeight.w800)),const SizedBox(height:12),TextField(onChanged:(x)=>setState(()=>q=x.toUpperCase()),decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'Search pair',border:OutlineInputBorder())),const SizedBox(height:12),const Row(children:[Expanded(child:Text('Favorites',textAlign:TextAlign.center)),Expanded(child:Text('Spot',textAlign:TextAlign.center)),Expanded(child:Text('Futures',textAlign:TextAlign.center)),Expanded(child:Text('New',textAlign:TextAlign.center))]),const SizedBox(height:10),if(loading)const LinearProgressIndicator(),...rows.where((x)=>x['symbol'].toString().contains(q)).map((x)=>Tile(symbol:x['symbol'].toString(),price:x['lastPrice'].toString(),change:Api.change(Map<String,dynamic>.from(x as Map))))])));}
 class Trade extends StatefulWidget{const Trade({super.key});State<Trade>createState()=>_TradeState();}
 class _TradeState extends State<Trade>{String s='BTCUSDT',side='BUY',type='LIMIT';Map<String,dynamic>? t;final p=TextEditingController(),a=TextEditingController();String msg='Paper trading mode';initState(){super.initState();load();}Future<void>load()async{try{t=await Api.ticker(s);if(mounted)setState((){});}catch(_){}}Widget build(BuildContext c)=>SafeArea(child:ListView(padding:const EdgeInsets.all(16),children:[
  Row(children:[const Text('Trade',style:TextStyle(fontSize:28,fontWeight:FontWeight.w800)),const Spacer(),DropdownButton<String>(value:s,items:const['BTCUSDT','ETHUSDT','BNBUSDT','SOLUSDT'].map((x)=>DropdownMenuItem(value:x,child:Text(x))).toList(),onChanged:(x){if(x!=null){setState(()=>s=x);load();}})]),
