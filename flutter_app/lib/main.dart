@@ -107,7 +107,7 @@ class _ExchangeState extends State<Exchange>{int i=0;final pages=const[Home(),Ma
 class Api{
  static Future<dynamic> get(String path)async{final cl=HttpClient();try{final res=await cl.getUrl(Uri.parse(binance+path)).then((x)=>x.close());final body=await res.transform(utf8.decoder).join();if(res.statusCode!=200)throw Exception('Binance HTTP '+res.statusCode.toString());return jsonDecode(body);}finally{cl.close(force:true);}}
  static Future<Map<String,dynamic>> ticker(String s)=>get('/api/v3/ticker/24hr?symbol='+s).then((x)=>Map<String,dynamic>.from(x));
- static Future<List<dynamic>> all()=>get('/api/v3/ticker/24hr');
+ static Future<List<dynamic>> all()=>get('/api/v3/ticker/24hr').then((x)=>List<dynamic>.from(x as List));
 }
 
 class Home extends StatefulWidget{const Home({super.key});State<Home>createState()=>_HomeState();}
@@ -142,6 +142,46 @@ class _TradeState extends State<Trade>{String s='BTCUSDT',side='BUY',type='LIMIT
  FilledButton(onPressed:()=>setState(()=>msg='Paper '+side+' order prepared for '+s),child:Text('Place '+side+' order')),const SizedBox(height:12),Card(child:Padding(padding:const EdgeInsets.all(14),child:Text(msg))),const SizedBox(height:18),const Text('Open orders',style:TextStyle(fontSize:20,fontWeight:FontWeight.bold)),const Card(child:ListTile(title:Text('No open orders'),subtitle:Text('Real execution is disabled')))
  ]));}
 
-class Futures extends StatelessWidget{const Futures({super.key});Widget build(BuildContext c)=>SafeArea(child:ListView(padding:const EdgeInsets.all(16),children:[const Text('Futures',style:TextStyle(fontSize:28,fontWeight:FontWeight.w800)),const Text('Perpetual futures workspace'),const SizedBox(height:18),Card(child:Padding(padding:const EdgeInsets.all(18),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('BTCUSDT Perpetual',style:TextStyle(fontSize:20,fontWeight:FontWeight.bold)),const SizedBox(height:12),const Text('1x leverage • USDT margin • Paper mode'),const SizedBox(height:12),Row(children:[Expanded(child:FilledButton(onPressed:(){},child:const Text('Long'))),const SizedBox(width:10),Expanded(child:OutlinedButton(onPressed:(){},child:const Text('Short')))])])),const SizedBox(height:10),Feature('Positions','No live futures positions',Icons.bar_chart),Feature('Order history','Paper order history',Icons.history),Feature('Risk controls','Margin, leverage and liquidation controls',Icons.security)]));}
+class Futures extends StatelessWidget {
+  const Futures({super.key});
+
+  @override
+  Widget build(BuildContext c) => SafeArea(
+    child: ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const Text('Futures', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800)),
+        const Text('Perpetual futures workspace'),
+        const SizedBox(height: 18),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('BTCUSDT Perpetual', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 12),
+                const Text('1x leverage • USDT margin • Paper mode'),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(child: FilledButton(onPressed: () {}, child: const Text('Long'))),
+                    const SizedBox(width: 10),
+                    Expanded(child: OutlinedButton(onPressed: () {}, child: const Text('Short'))),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Feature('Positions', 'No live futures positions', Icons.bar_chart),
+        Feature('Order history', 'Paper order history', Icons.history),
+        Feature('Risk controls', 'Margin, leverage and liquidation controls', Icons.security),
+      ],
+    ),
+  );
+}
+
 class Assets extends StatelessWidget{const Assets({super.key});Widget build(BuildContext c)=>SafeArea(child:ListView(padding:const EdgeInsets.all(16),children:[const Text('Assets',style:TextStyle(fontSize:28,fontWeight:FontWeight.w800)),const SizedBox(height:8),const Text('Total estimated value',style:TextStyle(color:Colors.white60)),const Text('10,000.00 USDT',style:TextStyle(fontSize:30,fontWeight:FontWeight.w800)),const SizedBox(height:18),Row(children:[Q(Icons.add,'Deposit'),Q(Icons.arrow_upward,'Withdraw'),Q(Icons.swap_horiz,'Transfer'),Q(Icons.qr_code,'Receive')]),const SizedBox(height:20),const Text('Wallets',style:TextStyle(fontSize:20,fontWeight:FontWeight.bold)),const SizedBox(height:8),Bal('USDT','10,000.00','10,000.00 USDT'),Bal('BTC','0.00000000','0.00 USDT'),Bal('ETH','0.00000000','0.00 USDT'),Bal('BNB','0.00000000','0.00 USDT')]));}
 class Bal extends StatelessWidget{final String c,a,v;const Bal(this.c,this.a,this.v,{super.key});Widget build(BuildContext x)=>Card(child:ListTile(leading:CircleAvatar(backgroundColor:const Color(0xff2b2f36),child:Text(c[0])),title:Text(c,style:const TextStyle(fontWeight:FontWeight.bold)),subtitle:Text(v),trailing:Text(a)));}
